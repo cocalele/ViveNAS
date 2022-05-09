@@ -5,7 +5,7 @@
 key的格式如下：
 由16Byte的binary构成，可以这么看
 ```
-struct pfs_key{
+struct pfs_extent_key{
      union { 
           struct {
                _le64 extent_index;
@@ -15,27 +15,21 @@ struct pfs_key{
       }
 }
 ```
-每个文件的第一extent 除了文件数据外，在头部还包括inode数据。即首先是固定大小的inode 加上其次的extent 数据。
-其他的extent 会包含16字节的头。
 
-组成文件的第一个K-V , 
-```
-Key := (inode_no<<64)+0;
-Value := <inode:256Byte> + <extent_head> + <data：64KByte>
-```
-其他的K-V,
+
+组成文件的K-V,
 ```
 Key := (inode_no<<64) +<extent_index>
-Value := <extent_head> + <data：32KByte>
+Value := <extent_head> + <data：64KByte>
 ```
 
 Write 的实现：
 write操作使用rocksdb的merge操作实现，而不是read-modify-write这样的步骤。对一个extent的写入就是一个Merge操作。
 Key:自然就是这个extent的可以。
-Value部分包括<extent_head> + <data：32KByte>
+Value部分包括<extent_head> + <data：64KByte>
 这里要说明下extent_head的结构：
 ```
-struct extent_head {
+struct pfs_extent_head {
    int8_t flags;
    int8_t pad0;
    union{ 
@@ -60,8 +54,6 @@ base + delta => new base
 delta + delta => merged delta
 
 
-如果是extent[0], 只有base数据包含了inode， delta里面不包含。inode不参与merge, 总是保留在结果里面
-
 inode的大小为256Byte，使用和ext4几乎兼容的格式。
 
 如何知道文件的大小？
@@ -73,9 +65,10 @@ inode的大小为256Byte，使用和ext4几乎兼容的格式。
 
 __如何从文件名查到inode ?__
 
-在一个单独的column family 里，建立 从file name -> inode no的映射
+在一个单独的column family 里，建立 从file name -> inode的映射
 
-`file_name_key -> inode_no` 这个映射保存在单独的column family里。
+`file_name_key -> inode_data_struct` 这个映射保存在单独的column family里, 即"meta_cf"。 如前所述，inode的大小为256 Bytes。
+`file_name_key`的组成为：
 `file_name_key := <parent_dir_inode_no> +  '_' + <file_name_without_path>`
 也就是说，打开一个文件时需要一层一层找到这个文件所在的目录的inode_no, 然后再和文件名拼接成一个key， 去查询最终的文件inode_no.
 
@@ -86,7 +79,7 @@ __如何从文件名查到inode ?__
    +-- 1.txt  （inode 103)
    +-- 2.txt  （inode 104)
 ```
-z这里有两个文件，全路径分别为/A/B/1.txt和/A/B/2.txt。如果使用全路径作为作为key，那么存储的K-V对就是
+这里有两个文件，全路径分别为/A/B/1.txt和/A/B/2.txt。如果使用全路径作为作为key，那么存储的K-V对就是
 ```
 /A/B/1.txt     ->   103
 /A/B/2.txt     ->   104
@@ -104,7 +97,10 @@ z这里有两个文件，全路径分别为/A/B/1.txt和/A/B/2.txt。如果使�
 目录文件的目的是为了ls目录下面的文件。如果不使用目录文件，也可以借助类似rocksdb的prefix search这样的功能，比如要ls /A/B 这个目录，我们只需要`prefix search '102_'` 开头的key就可以了。遗憾的是LSM tree对prefix search是非常低效的，文件系统的规模变大以后，很可能导致所有Level的所有文件都被频繁全量访问。
 
 ### 三，Merge 操作
-如果一次io 操作跨越了两个extent, 要分成两笔io 进行。后面讨论Merge 都只限定在单个k-v内部
+前提：
+_如果一次io 操作跨越了两个extent, 要分成两笔io 进行。后面讨论Merge 都只限定在单个k-v内部。_
+
+
 
 每次io会带上offset, length 两个信息，作为冗余信息，offset使用相对于extent内部的offset。
 

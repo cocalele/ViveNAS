@@ -1,0 +1,6 @@
+[submodule "rocksdb"]
+	path = rocksdb
+	url = https://gitee.com/cocalele/rocksdb.git
+[submodule "PureFlash"]
+	path = PureFlash
+	url = https://gitee.com/cocalele/PureFlash.git
