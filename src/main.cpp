@@ -13,6 +13,7 @@
 #include <rocksdb/utilities/object_registry.h>
 #include "pfaof.h"
 #include "vivenas.h"
+#include "vivenas_internal.h"
 #include "pf_log.h"
 #include "data_merge.h"
 
@@ -42,16 +43,16 @@ int main() {
 	__PfAof_init();
     return 0;
 }
-int mount(ViveFsContext* ctx) {
-    DB* db;
+ViveFsContext* vn_mount(const char* db_path) {
+   
     Options options;
     ConfigOptions config_options;
-
+    ViveFsContext* ctx = new ViveFsContext();
     Status s =
         Env::CreateFromUri(config_options, "", "pfaof", &FLAGS_env, &env_guard);
     if (!s.ok()) {
-        fprintf(stderr, "Failed creating env: %s\n", s.ToString().c_str());
-        exit(1);
+        S5LOG_ERROR("Failed creating env: %s\n", s.ToString().c_str());
+        return NULL;
     }
 
 
@@ -61,7 +62,7 @@ int mount(ViveFsContext* ctx) {
     // create the DB if it's not already present
     options.create_if_missing = true;
     options.env = FLAGS_env;
-
+    TransactionDBOptions tx_opt;
 
 
     // open DB with two column families
@@ -77,81 +78,34 @@ int mount(ViveFsContext* ctx) {
     column_families.push_back(ColumnFamilyDescriptor(
 	    "data_cf", data_cf_opt));
     std::vector<ColumnFamilyHandle*> handles;
-    s = DB::Open(options, ctx->db_path.c_str(), column_families, &handles, &db);
+    ctx->db_path = db_path;
+    s = TransactionDB::Open(options, tx_opt, ctx->db_path.c_str(), column_families, &handles, &ctx->db);
     if(!s.ok()){
-        S5LOG_FATAL( "Failed open db:%s, %s", ctx->db_path.c_str(), s.ToString().c_str());
+        S5LOG_ERROR( "Failed open db:%s, %s", ctx->db_path.c_str(), s.ToString().c_str());
     }
     ctx->default_cf = handles[0];
     ctx->meta_cf = handles[1];
-    ctx->default_cf = handles[2];
+    ctx->data_cf = handles[2];
 
     ctx->meta_opt.sync = true;
   
-  
-  
-  // Put key-value
-  s = db->Put(WriteOptions(), "key1", "value");
-  if (!s.ok()) {
-    fprintf(stderr, "Failed call DB::Open, %s", s.ToString().c_str());
-    exit(s.code());
-  }
-  std::string value;
-  // get value
-  s = db->Get(ReadOptions(), "key1", &value);
-  if (!s.ok()) {
-    fprintf(stderr, "Failed call DB::Open, %s", s.ToString().c_str());
-    exit(s.code());
-  }
-  assert(value == "value");
+    memset(&ctx->root_inode, 0, sizeof(ctx->root_inode));
+    ctx->root_inode.i_no = VN_ROOT_INO;
 
-  // atomically apply a set of updates
-  {
-    WriteBatch batch;
-    batch.Delete("key1");
-    batch.Put("key2", value);
-    s = db->Write(WriteOptions(), &batch);
-  }
+    ViveFile* f = new ViveFile;
+    f->i_no = VN_ROOT_INO;
+    f->inode = &ctx->root_inode;
+    f->file_name = "/";
+    ctx->root_file.reset(f);
 
-  s = db->Get(ReadOptions(), "key1", &value);
-  assert(s.IsNotFound());
 
-  db->Get(ReadOptions(), "key2", &value);
-  assert(value == "value");
-
-  {
-    PinnableSlice pinnable_val;
-    db->Get(ReadOptions(), db->DefaultColumnFamily(), "key2", &pinnable_val);
-    assert(pinnable_val == "value");
-  }
-
-  {
-    std::string string_val;
-    // If it cannot pin the value, it copies the value to its internal buffer.
-    // The intenral buffer could be set during construction.
-    PinnableSlice pinnable_val(&string_val);
-    db->Get(ReadOptions(), db->DefaultColumnFamily(), "key2", &pinnable_val);
-    assert(pinnable_val == "value");
-    // If the value is not pinned, the internal buffer must have the value.
-    assert(pinnable_val.IsPinned() || string_val == "value");
-  }
-
-  PinnableSlice pinnable_val;
-  s = db->Get(ReadOptions(), db->DefaultColumnFamily(), "key1", &pinnable_val);
-  assert(s.IsNotFound());
-  // Reset PinnableSlice after each use and before each reuse
-  pinnable_val.Reset();
-  db->Get(ReadOptions(), db->DefaultColumnFamily(), "key2", &pinnable_val);
-  assert(pinnable_val == "value");
-  pinnable_val.Reset();
-  // The Slice pointed by pinnable_val is not valid after this point
-
-  delete db;
-
-  return 0;
+    return ctx;
 }
 
 int umount(ViveFsContext* ctx)
 {
     S5LOG_INFO("umountint ViveFS:%s", ctx->db_path.c_str());
     delete ctx->db;
+    delete ctx;
+    return 0;
 }

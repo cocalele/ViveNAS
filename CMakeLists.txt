@@ -12,17 +12,9 @@ set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(THIRDPARTY ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty)
+set(GANESHA_SRC ../nfs-ganesha)
 
-macro(use_cxx11)
-    if (CMAKE_VERSION VERSION_LESS "3.1")
-        if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
-        endif ()
-    else ()
-        set (CMAKE_CXX_STANDARD 11)
-    endif ()
-endmacro(use_cxx11)
-
+set (CMAKE_CXX_STANDARD 17)
 execute_process(COMMAND make -j 4
                 WORKING_DIRECTORY ./rocksdb)
 #execute_process(COMMAND git submodule update --init
@@ -32,23 +24,30 @@ execute_process(COMMAND make -j 4
 
 add_compile_options (-fdiagnostics-color=always)
 
-set(CMAKE_C_FLAGS   "-Wall -Wno-conversion -Wno-sign-compare -std=c99 -fms-extensions -Wno-variadic-macros -Wno-format-truncation -I/usr/include ${C_FLAG_GCOV}")
-set(CMAKE_CXX_FLAGS   "-Wall -Wconversion -Wno-sign-compare  -fms-extensions -Wno-variadic-macros -Wno-format-truncation -I/usr/include -D_XOPEN_SOURCE ${C_FLAG_GCOV}")
+set(CMAKE_C_FLAGS   "-Wall -Wno-conversion -Wno-sign-compare -std=c99 -fPIC -fms-extensions -Wno-variadic-macros -Wno-format-truncation -I/usr/include ${C_FLAG_GCOV}")
+set(CMAKE_CXX_FLAGS   "-Wall -Wconversion -Wno-sign-compare  -std=c++17 -fPIC -fms-extensions -Wno-variadic-macros -Wno-format-truncation -I/usr/include -D_XOPEN_SOURCE ${C_FLAG_GCOV}")
 set(CMAKE_C_FLAGS_DEBUG  "-O0 -g -DDEBUG ")
 set(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG ")
 add_definitions(-D_XOPEN_SOURCE)
 
-INCLUDE_DIRECTORIES(include  rocksdb rocksdb/include PureFlash/common/include PureFlash/pfs/nlohmann_json/include)
+INCLUDE_DIRECTORIES(include  rocksdb rocksdb/include PureFlash/common/include PureFlash/pfs/nlohmann_json/include 
+                    ${GANESHA_SRC}/src/include ${GANESHA_SRC}/build/include ${GANESHA_SRC}/src/libntirpc/ntirpc)
 set (VIVE_SRC 
 	src/pfaof.cpp
 	src/main.cpp
     src/mkfs.cpp
- "src/file.cpp" "src/data_merge.cpp")
+    src/file.cpp
+    src/data_merge.cpp
+    src/fsal/vn_registry.cpp 
+    src/fsal/vn_handle.cpp
+    src/fsal/vn_export.cpp
+    src/fsal/vn_up.cpp
+ )
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 
 link_directories(./PureFlash/build_deb/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
 
-add_executable(vivenas_srv  ${VIVE_SRC} ${INCS})
+add_library(vivenas_srv  SHARED ${VIVE_SRC} ${INCS})
 TARGET_LINK_LIBRARIES(vivenas_srv rdmacm ibverbs pthread uuid s5common  curl  rocksdb_debug zookeeper_mt)
 #add_custom_target( all COMMAND ROCKSDB_PLUGINS="pfaof" PF_INC=~/v2/PureFlash/common/include PF_LIB=~/v2/PureFlash/build_deb/bin make simple_example
 #                   COMMAND date

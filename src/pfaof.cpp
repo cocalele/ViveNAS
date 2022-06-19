@@ -310,7 +310,7 @@ public:
         
       int rc = pf_ls_aof_children(t_name.c_str(), "/etc/pureflash/pf.conf", result);
       if(rc == 0) {
-        int len = dir_name.size();
+        size_t len = dir_name.size();
         for (std::vector<std::string>::iterator i = result->begin();
              i != result->end(); ++i) {
             *i = i->substr(len + 1);

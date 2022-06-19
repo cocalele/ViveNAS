@@ -35,12 +35,13 @@ int vn_mkfs_vivefs(const char* db_path)
 	DB* db;
 	Options options;
 	ConfigOptions config_options;
-
+	static std::shared_ptr<ROCKSDB_NAMESPACE::Env> env_guard;
+	static ROCKSDB_NAMESPACE::Env* FLAGS_env = ROCKSDB_NAMESPACE::Env::Default();
 	Status s =
 		Env::CreateFromUri(config_options, "", "pfaof", &FLAGS_env, &env_guard);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed creating env: %s\n", s.ToString().c_str());
-		exit(1);
+		return -s.code();
 	}
 
 
@@ -56,7 +57,7 @@ int vn_mkfs_vivefs(const char* db_path)
 	s = DB::Open(options, db_path, &db);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to open database:%s, %s", db_path, s.ToString().c_str());
-		exit(s.code());
+		return -s.code();
 	}
 	DeferCall _1([db]() {delete db; });
 
@@ -64,14 +65,14 @@ int vn_mkfs_vivefs(const char* db_path)
 	s = db->CreateColumnFamily(ColumnFamilyOptions(), "meta_cf", &cf1);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF meta_cf, %s", s.ToString().c_str());
-		exit(s.code());
+		return -s.code();
 	}
 	
 	ColumnFamilyHandle* cf2;
 	s = db->CreateColumnFamily(ColumnFamilyOptions(), "data_cf", &cf2);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF data_cf, %s", s.ToString().c_str());
-		exit(s.code());
+		return -s.code();
 	}
 
 	ViveSuperBlock sb = { VIVEFS_MAGIC_STR , VIVEFS_VER };
@@ -83,5 +84,6 @@ int vn_mkfs_vivefs(const char* db_path)
 	CHECKED_CALL(db->SyncWAL());
 	CHECKED_CALL(db->Close());
 	delete db;
+	return 0;
 }
 

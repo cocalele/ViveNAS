@@ -4,6 +4,7 @@
 #include <rocksdb/merge_operator.h>
 using ROCKSDB_NAMESPACE::MergeOperator;
 using ROCKSDB_NAMESPACE::Slice;
+using ROCKSDB_NAMESPACE::Logger;
 
 class ViveDataMergeOperator : public MergeOperator
 {
