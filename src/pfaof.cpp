@@ -151,50 +151,52 @@ class PfAofWriteableFile :  public FSWritableFile {
     IOStatus Append(const Slice& data, const IOOptions& options,
                             IODebugContext* dbg) override
     {
-      (void)options;
-      (void)dbg;
-      std::lock_guard<std::mutex> guard(_mutex);
-      ssize_t rc = aof->append(data.data(), data.size());
-      if (rc != (ssize_t)data.size()) return IOStatus::IOError();
-      return IOStatus::OK();
+        (void)options;
+        (void)dbg;
+        std::lock_guard<std::mutex> guard(_mutex);
+        ssize_t rc = aof->append(data.data(), data.size());
+        if (rc != (ssize_t)data.size()) return IOStatus::IOError();
+        return IOStatus::OK();
 
     }
     virtual IOStatus Append(const Slice& data, const IOOptions& options,
                             const DataVerificationInfo& /* verification_info */,
                             IODebugContext* dbg) {
-      return Append(data, options, dbg);
+        return Append(data, options, dbg);
     }
     IOStatus Close(const IOOptions& options, IODebugContext* dbg)
     {
-      (void)options;
-      (void)dbg;
-      delete aof;
+        (void)options;
+        (void)dbg;
+        delete aof;
         aof = NULL;
         offset = 0;
         return IOStatus::OK();
     }
     IOStatus Flush(const IOOptions& options, IODebugContext* dbg)
     {
-      (void)options;
-      (void)dbg;
-      aof->sync();
+        (void)options;
+        (void)dbg;
+        aof->sync();
         return IOStatus::OK();
     }
 
     virtual IOStatus Sync(const IOOptions& options,
                           IODebugContext* dbg)  // sync data
     {
-      (void)options;
-      (void)dbg;
-      aof->sync();
+        (void)options;
+        (void)dbg;
+        aof->sync();
         return IOStatus::OK();
     }
+	virtual bool IsSyncThreadSafe() const { return true; }
+
     /*
     * Get the size of valid data in the file.
     */
     virtual uint64_t GetFileSize(const IOOptions& /*options*/,
                                  IODebugContext* /*dbg*/) {
-      return aof->file_length();
+        return aof->file_length();
     }
 };
 

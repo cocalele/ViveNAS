@@ -35,7 +35,6 @@ INCLUDE_DIRECTORIES(include  rocksdb rocksdb/include PureFlash/common/include Pu
 set (VIVE_SRC 
 	src/pfaof.cpp
 	src/main.cpp
-    src/mkfs.cpp
     src/file.cpp
     src/data_merge.cpp
     src/fsal/vn_registry.cpp 
@@ -43,12 +42,22 @@ set (VIVE_SRC
     src/fsal/vn_export.cpp
     src/fsal/vn_up.cpp
  )
+ set (MKFS_SRC 
+	src/pfaof.cpp
+    src/mkfs.cpp
+    src/main.cpp
+    src/file.cpp
+    src/data_merge.cpp
+)
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 
 link_directories(./PureFlash/build_deb/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
 
-add_library(vivenas_srv  SHARED ${VIVE_SRC} ${INCS})
-TARGET_LINK_LIBRARIES(vivenas_srv rdmacm ibverbs pthread uuid s5common  curl  rocksdb_debug zookeeper_mt)
+add_library(fsalvivenas  SHARED ${VIVE_SRC} ${INCS})
+add_executable(mkfs.vn  ${MKFS_SRC} ${HTTP_SRC} ${INCS})
+
+TARGET_LINK_LIBRARIES(fsalvivenas pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
+TARGET_LINK_LIBRARIES(mkfs.vn pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
 #add_custom_target( all COMMAND ROCKSDB_PLUGINS="pfaof" PF_INC=~/v2/PureFlash/common/include PF_LIB=~/v2/PureFlash/build_deb/bin make simple_example
 #                   COMMAND date
 #                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

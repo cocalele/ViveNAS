@@ -1,5 +1,11 @@
 #ifndef vivenas_internal_h__
 #define vivenas_internal_h__
+
+struct ViveSuperBlock;
+
+#define VIVEFS_MAGIC_STR "vivefs_0"
+#define VIVEFS_VER 0x00010000
+
 #define LBA_SIZE 4096
 #define LBA_SIZE_ORDER 12
 struct pfs_extent_key {
@@ -42,4 +48,11 @@ struct pfs_extent_head {
  */ 
 #define VN_ROOT_INO 2
 #define VN_FIRST_USER_INO 12
+
+static __always_inline int64_t deserialize_int64(const char* s) {
+	return *(int64_t*)s;
+}
+void deserialize_superblock(const char* buf, ViveSuperBlock& sb);
+std::string serialize_superblock(const ViveSuperBlock& sb);
+
 #endif // vivenas_internal_h__

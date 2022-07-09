@@ -12,16 +12,23 @@
 #define INODE_SEED_KEY "__inode_seed__"
 
 
-#define FILE_MODE_FIFO 0x1000
-#define FILE_MODE_CHAR_DEV 0x2000
-#define FILE_MODE_DIR 0x4000
-#define FILE_MODE_BLK_DEV 0x6000
-#define FILE_MODE_REG 0x8000
-#define FILE_MODE_SYM_LINK 0xA000
-#define FILE_MODE_SOCKET 0xC000
+/* File types.   defined in stat.h */
+//#define	__S_IFDIR	0040000	/* Directory.  */
+//#define	__S_IFCHR	0020000	/* Character device.  */
+//#define	__S_IFBLK	0060000	/* Block device.  */
+//#define	__S_IFREG	0100000	/* Regular file.  */
+//#define	__S_IFIFO	0010000	/* FIFO.  */
+//#define	__S_IFLNK	0120000	/* Symbolic link.  */
+//#define	__S_IFSOCK	0140000	/* Socket.  */
 
-#define IS_DIR(mode) ((mode & 0xf000) == FILE_MODE_DIR) 
+/* and following macro defined fcntl.h*/
+//# define S_IFMT		__S_IFMT
+//# define S_IFDIR	__S_IFDIR
+//# define S_IFCHR	__S_IFCHR
+//# define S_IFBLK	__S_IFBLK
+//# define S_IFREG	__S_IFREG
 
+// S_ISREG ... can used to judge file type
 
 struct ViveSuperBlock
 {
@@ -32,7 +39,7 @@ struct ViveSuperBlock
  * members of ViveInode have same means as that in ext4_inode
  */
 struct ViveInode {
-	__le16	i_mode;		/* File mode */ 
+	__le16	i_mode;		/* File mode */ //use file type like __S_IFDIR
 	__le16	i_uid;		/* Low 16 bits of Owner Uid */
 	__le64	i_size;	/* Size in bytes */
 	__le64	i_atime;	/* Access time */
@@ -66,6 +73,7 @@ struct ViveFile {
 };
 
 struct ViveFsContext {
+	ViveFsContext();
 	std::string db_path;
 	ROCKSDB_NAMESPACE::TransactionDB* db;
 	ROCKSDB_NAMESPACE::ColumnFamilyHandle* default_cf;

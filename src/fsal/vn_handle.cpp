@@ -6,6 +6,7 @@
 #include "vn_fsal.h"
 #include "vivenas.h"
 #include <string>
+#include <pf_utils.h>
 extern "C"{
 #include "fsal.h"
 #include "fsal_convert.h"
@@ -75,12 +76,12 @@ static void vn_cleanup(struct vn_fsal_obj_handle* myself)
 
 	LogDebug(COMPONENT_FSAL,
 		"Releasing obj_hdl=%p, myself=%p, name=%s",
-		&myself->obj_handle, myself, myself->vfile->file_name.c_str());
+		&myself->obj_handle, myself, myself->name.c_str());
 
 	switch (myself->obj_handle.type) {
 	case DIRECTORY:
 		/* Empty directory */
-		vn_clean_all_dirents(myself);
+		//vn_clean_all_dirents(myself);
 		break;
 	case REGULAR_FILE:
 		break;
@@ -162,7 +163,7 @@ static void _vn_int_put_ref(struct vn_fsal_obj_handle* myself,
 static void package_vn_handle(struct vn_fsal_obj_handle* myself)
 {
 	char buf[MAXPATHLEN];
-	uint16_t len_fileid, len_name;
+	uint16_t len_fileid, len_inode;
 	uint64_t hashkey;
 	int opaque_bytes_used = 0, pathlen = 0;
 
@@ -171,9 +172,9 @@ static void package_vn_handle(struct vn_fsal_obj_handle* myself)
 	/* Make hashkey */
 	len_fileid = sizeof(myself->obj_handle.fileid);
 	memcpy(buf, &myself->obj_handle.fileid, len_fileid);
-	len_name = (uint16_t)myself->vfile->file_name.size();
-	memcpy(buf + len_fileid, myself->vfile->file_name.c_str(),
-		MIN(len_name, sizeof(buf) - len_name));
+	len_inode = sizeof(myself->inode);
+	memcpy(buf + len_fileid, &myself->inode,
+		MIN(len_inode, sizeof(buf) - len_inode));
 	hashkey = CityHash64(buf, sizeof(buf));
 
 	memcpy(myself->handle, &hashkey, sizeof(hashkey));
@@ -182,15 +183,15 @@ static void package_vn_handle(struct vn_fsal_obj_handle* myself)
 	/* include length of the name in the handle.
 	 * MAXPATHLEN=4096 ... max path length can be contained in a short int.
 	 */
-	memcpy(myself->handle + opaque_bytes_used, &len_name, sizeof(len_name));
-	opaque_bytes_used += (int)sizeof(len_name);
+	memcpy(myself->handle + opaque_bytes_used, &len_inode, sizeof(len_inode));
+	opaque_bytes_used += (int)sizeof(len_inode);
 
 	/* Either the nfsv4 fh opaque size or the length of the name.
 	 * Ideally we can include entire mem name for guaranteed
 	 * uniqueness of mem handles.
 	 */
-	pathlen = MIN(V4_FH_OPAQUE_SIZE - opaque_bytes_used, len_name);
-	memcpy(myself->handle + opaque_bytes_used, myself->vfile->file_name.c_str(), pathlen);
+	pathlen = MIN(V4_FH_OPAQUE_SIZE - opaque_bytes_used, len_inode);
+	memcpy(myself->handle + opaque_bytes_used, &myself->inode, pathlen);
 	opaque_bytes_used += pathlen;
 
 	/* If there is more space in the opaque handle due to a short mem
@@ -320,9 +321,9 @@ static void vn_copy_attrs_mask(struct fsal_attrlist* attrs_in,
  */
 static struct vn_fsal_obj_handle*
 vn_alloc_handle(struct vn_fsal_obj_handle* parent,
-	const char* name,
-	ViveInode* inode,
-	struct vn_fsal_export* mfe)
+			const char* name,
+			ViveInode* inode,
+			struct vn_fsal_export* mfe)
 {
 	struct vn_fsal_obj_handle* hdl;
 	struct fsal_filesystem* fs = mfe->m_export.root_fs;
@@ -332,29 +333,34 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 	hdl->mfo_exp = mfe;
 
 	package_vn_handle(hdl);
+	hdl->name = name;
 	hdl->obj_handle.type = posix2fsal_type(inode->i_mode);
 	//hdl->dev = posix2fsal_devt(stat->st_dev);
 	//hdl->obj_handle.up_ops = mfe->m_export.up_ops;
 	hdl->obj_handle.fs = fs;
-
 	LogDebug(COMPONENT_FSAL,
-		"Creating object %p for file %s of type %s on filesystem %p %s",
+		"Creating object %p for file %s of type %s on filesystem %p ",
 		hdl, name, object_file_type_to_str(hdl->obj_handle.type),
-		fs, fs->path);
-	hdl->vfile = NULL;
+		fs);
+
+	//hdl->vfile = NULL;
 
 
 	fsal_obj_handle_init(&hdl->obj_handle, exp_hdl,
-		posix2fsal_type(inode->i_mode));//m_mode is 16bit, but posix2fsal_type use constant number large than this to compare
-	LogWarn(COMPONENT_FSAL, "?? posix2fsal_type may works wrong");
-	hdl->obj_handle.fsid = fs->fsid;
+		posix2fsal_type(inode->i_mode));
+	
+	if (fs) {
+
+		hdl->obj_handle.fsid = fs->fsid;
+	}
 	hdl->obj_handle.fileid = inode->i_no;
 #ifdef VFS_NO_MDCACHE
 	hdl->obj_handle.state_hdl = vfs_state_locate(&hdl->obj_handle);
 #endif /* VFS_NO_MDCACHE */
 	hdl->obj_handle.obj_ops = &ViveNASM.handle_ops;
-	hdl->inode = vn_inode_no_t( inode->i_no);
+	memcpy(&hdl->inode, inode, sizeof(hdl->inode));
 	hdl->refcount = 1;
+	S5LOG_DEBUG("alloc vn_fsal_obj_handle:%p", hdl);
 	return hdl;
 }
 
@@ -380,7 +386,7 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 		return fsalstat(ERR_FSAL_NOTDIR, 0);
 	}
 
-	vn_inode_no_t i_no =  vn_lookup_inode_no(mfe->mount_ctx, parent->vfile->i_no, name, NULL);
+	vn_inode_no_t i_no =  vn_lookup_inode_no(mfe->mount_ctx, parent->inode.i_no, name, NULL);
 	if (i_no.to_int() > 0) {
 		/* It already exists */
 		return fsalstat(ERR_FSAL_EXIST, 0);
@@ -388,7 +394,7 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 
 
 	ViveInode inode;
-	i_no = vn_create_file(mfe->mount_ctx, parent->inode.to_int(), name, attrs_in->mode, &inode);
+	i_no = vn_create_file(mfe->mount_ctx, parent->inode.i_no, name, attrs_in->mode, &inode);
 	if (i_no.to_int() < 0) {
 		LogCrit(COMPONENT_FSAL, "Failed create file:%s", name);
 		return fsalstat(ERR_FSAL_IO, 0);
@@ -424,7 +430,7 @@ static fsal_status_t vn_lookup(struct fsal_obj_handle* parent,
 {
 	struct vn_fsal_obj_handle* myself, * hdl = NULL;
 	fsal_status_t status;
-
+	S5LOG_DEBUG("vn_lookup on %s", path);
 	myself = container_of(parent,
 		struct vn_fsal_obj_handle,
 		obj_handle);
@@ -434,12 +440,9 @@ static fsal_status_t vn_lookup(struct fsal_obj_handle* parent,
 	 */
 	if (op_ctx->fsal_private != parent)
 		PTHREAD_RWLOCK_rdlock(&parent->obj_lock);
-	else
-		LogFullDebug(COMPONENT_FSAL,
-			"Skipping lock for %s",
-			myself->vfile->file_name.c_str());
+	
 	ViveInode inode;
-	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, myself->inode.to_int(), path, &inode);
+	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, myself->inode.i_no, path, &inode);
 	if (ino.to_int() < 0) {
 		status = fsalstat(ERR_FSAL_NOENT, 0);
 		goto out;
@@ -498,7 +501,6 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	struct fsal_attrlist attrs;
 	enum fsal_dir_result cb_rc;
 	int count = 0;
-
 	myself = container_of(dir_hdl,
 		struct vn_fsal_obj_handle,
 		obj_handle);
@@ -512,8 +514,8 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	tracepoint(fsalmem, vn_readdir, __func__, __LINE__, dir_hdl,
 		myself->m_name, cookie);
 #endif
-	LogFullDebug(COMPONENT_FSAL, "hdl=%p, name=%s",
-		myself, myself->vfile->file_name.c_str());
+	S5LOG_DEBUG("readdir hdl = % p, name = % s",
+		myself, myself->name.c_str());
 
 	PTHREAD_RWLOCK_rdlock(&dir_hdl->obj_lock);
 
@@ -524,11 +526,14 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 
 	struct vn_inode_iterator* it;
 	if(whence == NULL){
-		it = vn_begin_iterate_dir(myself->mfo_exp->mount_ctx, myself->inode.to_int());
+		it = vn_begin_iterate_dir(myself->mfo_exp->mount_ctx, myself->inode.i_no);
+		S5LOG_DEBUG("Create dir iterator:%p", it);
 	}
-	else
-		it = (struct vn_inode_iterator* )whence;
+	else {
+		it = (struct vn_inode_iterator*)whence;
+		S5LOG_DEBUG("reuse dir iterator:%p", it);
 
+	}
 	
 	string entry_name;
 	ViveInode* inode;
@@ -537,9 +542,9 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 		fsal_prepare_attrs(&attrs, attrmask);
 		set_attr_from_inode(&attrs, inode);
 
-		struct vn_fsal_obj_handle *hdl = vn_alloc_handle(myself, entry_name.c_str(),inode, myself->mfo_exp);
-		hdl->inode = vn_inode_no_t(inode->i_no);
-		
+		S5LOG_DEBUG("readdir return:%s", entry_name.c_str());
+		struct vn_fsal_obj_handle *hdl = vn_alloc_handle(myself, entry_name.c_str(), inode, myself->mfo_exp);
+				
 		cb_rc = cb(entry_name.c_str(), &hdl->obj_handle, &attrs,
 			dir_state, cookie);
 
@@ -555,6 +560,8 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	}
 
 	if(*eof == true) {
+		S5LOG_DEBUG("release dir iterator:%p", it);
+
 		vn_release_iterator(myself->mfo_exp->mount_ctx, it);
 	}
 	op_ctx->fsal_private = NULL;
@@ -717,27 +724,33 @@ static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
 	struct vn_fsal_obj_handle* myself =
 		container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
 
-	if (glist_empty(&myself->dirents)) {
-		/* Removed entry - stale */
-		LogDebug(COMPONENT_FSAL,
-			"Requesting attributes for removed entry %p, name=%s",
-			myself, myself->vfile->file_name.c_str());
-		return fsalstat(ERR_FSAL_STALE, ESTALE);
-	}
-
-	myself->attrs.numlinks = myself->vfile->inode->i_links_count;
+	myself->attrs.numlinks = myself->inode.i_links_count;
 
 #ifdef USE_LTTNG
 	tracepoint(fsalmem, vn_getattrs, __func__, __LINE__, obj_hdl,
 		myself->m_name, myself->attrs.filesize,
 		myself->attrs.numlinks, myself->attrs.change);
 #endif
-	LogFullDebug(COMPONENT_FSAL,
-		"hdl=%p, name=%s numlinks %" PRIu32,
+	S5LOG_DEBUG(
+		"vn_getattrs hdl=%p, name=%s numlinks %" PRIu32,
 		myself,
-		myself->vfile->file_name.c_str(),
+		myself->name.c_str(),
 		myself->attrs.numlinks);
+	struct stat fstat;
+	
+	fstat.st_atime = myself->inode.i_atime;
+	fstat.st_ctime = myself->inode.i_ctime;
+	fstat.st_blksize = 4096;
+	fstat.st_dev = 0;
+	fstat.st_ino = myself->inode.i_no;
+	fstat.st_nlink = myself->inode.i_links_count;
+	fstat.st_gid = myself->inode.i_gid;
+	fstat.st_uid = myself->inode.i_uid;
+	fstat.st_mode = myself->inode.i_mode;
+	fstat.st_size = myself->inode.i_size;
+	fstat.st_blocks = (fstat.st_size + fstat.st_blksize  -1)/ fstat.st_blksize;
 
+	posix2fsal_attributes_all(&fstat, &myself->attrs);
 	fsal_copy_attrs(outattrs, &myself->attrs, false);
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -809,7 +822,7 @@ fsal_status_t vn_link(struct fsal_obj_handle* obj_hdl,
 	struct vn_fsal_obj_handle* hdl;
 	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
 
-	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, dir->inode.to_int(), name, NULL);
+	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, dir->inode.i_no, name, NULL);
 	if (ino.to_int()>0) {
 		/* It already exists */
 		return fsalstat(ERR_FSAL_EXIST, 0);
@@ -844,11 +857,14 @@ static fsal_status_t vn_unlink(struct fsal_obj_handle* dir_hdl,
 
 	parent_dir = container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
 	myself = container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
-	assert(strcmp(name, myself->vfile->file_name.c_str()) == 0);
+	assert(strcmp(name, myself->name.c_str()) == 0);
 
-	if(__sync_sub_and_fetch(&myself->vfile->inode->i_links_count, 1) == 0) {
-		LogInfo(COMPONENT_FSAL, "Delete file:%ld_%s", parent_dir->inode.to_int(), name);
-		vn_delete(myself->mfo_exp->mount_ctx, myself->vfile);
+	
+	if(__sync_sub_and_fetch(&myself->inode.i_links_count, 1) == 0) {
+		LogInfo(COMPONENT_FSAL, "Delete file:%ld_%s", parent_dir->inode.i_no, name);
+		vn_delete(myself->mfo_exp->mount_ctx,  myself->vfile);
+	} else {
+		S5LOG_ERROR("BUG: link count not persisted if not 0");
 	}
 	
 	return fsalstat(fsal_error, 0);
@@ -908,7 +924,9 @@ static fsal_status_t vn_rename(struct fsal_obj_handle* obj_hdl,
 		container_of(newdir_hdl, struct vn_fsal_obj_handle,
 			obj_handle);
 	
-	int rc = vn_rename_file(vn_olddir->mfo_exp->mount_ctx, vn_olddir->inode, old_name, vn_newdir->inode, new_name);
+	int rc = vn_rename_file(vn_olddir->mfo_exp->mount_ctx, 
+		vn_inode_no_t(vn_olddir->inode.i_no), old_name, 
+		vn_inode_no_t(vn_newdir->inode.i_no), new_name);
 
 	
 	return fsalstat(rc == 0 ? ERR_FSAL_NO_ERROR : ERR_FSAL_IO, rc);
@@ -953,7 +971,7 @@ fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
 	myself = container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
 
 	fsal2posix_openflags(openflags, &posix_flags);
-	unix_mode = fsal2unix_mode(myself->vfile->inode->i_mode) &
+	unix_mode = myself->inode.i_mode &
 		~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
 
 	//If Name is NULL, obj_hdl is the file itself, otherwise obj_hdl is the parent directory.
@@ -961,7 +979,7 @@ fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
 		if (myself->vfile != NULL)
 			goto done;
 	} else {
-		ViveFile* f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.to_int(), name, posix_flags, unix_mode);
+		ViveFile* f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.i_no, name, posix_flags, unix_mode);
 		if (f == NULL)
 			return fsalstat(ERR_FSAL_NOENT, 0);
 		struct vn_fsal_obj_handle* file_hdl = vn_alloc_handle(myself, name, f->inode, myself->mfo_exp);
@@ -1282,6 +1300,8 @@ static void vn_release(struct fsal_obj_handle* obj_hdl)
 	myself = container_of(obj_hdl,
 		struct vn_fsal_obj_handle,
 		obj_handle);
+	S5LOG_DEBUG("vn_release handle: %p", myself);
+
 	vn_int_put_ref(myself);
 }
 
@@ -1364,6 +1384,7 @@ void vn_handle_ops_init(struct fsal_obj_ops* ops)
  /* lookup_path
   * modelled on old api except we don't stuff attributes.
   * KISS
+  * use as export_ops.  handle_ops will use vn_lookup
   */
 
 fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
@@ -1374,7 +1395,7 @@ fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 	struct vn_fsal_export* mfe;
 
 	mfe = container_of(exp_hdl, struct vn_fsal_export, m_export);
-
+	S5LOG_DEBUG(" vn_lookup_path for %s", path);
 	if (strcmp(path, mfe->export_path) != 0) {
 		/* Lookup of a path other than the export's root. */
 		LogCrit(COMPONENT_FSAL,
@@ -1383,17 +1404,14 @@ fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 		return fsalstat(ERR_FSAL_NOENT, ENOENT);
 	}
 
-
-	if (mfe->root_handle == NULL) {
-		mfe->root_handle = vn_alloc_handle(NULL,
-			mfe->export_path,
-			&mfe->mount_ctx->root_inode, mfe);
-	}
-	mfe->root_handle->vfile = mfe->root;
-	*obj_hdl = &mfe->root_handle->obj_handle;
+	struct vn_fsal_obj_handle* hdl  = vn_alloc_handle(NULL, mfe->export_path, &mfe->mount_ctx->root_inode, mfe);
+	
+	
+	*obj_hdl = &hdl->obj_handle;
+	//export_root_object_get(*obj_hdl);
 
 	if (attrs_out != NULL)
-		fsal_copy_attrs(attrs_out, &mfe->root_handle->attrs, false);
+		fsal_copy_attrs(attrs_out, &hdl->attrs, false);
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
@@ -1408,6 +1426,8 @@ fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
  * we could if we had the handle of the dir it is in, but this method
  * is for getting handles off the wire for cache entries that have LRU'd.
  * Ideas and/or clever hacks are welcome...
+ * 
+ * this function is used as export_ops
  */
 
 fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
@@ -1444,7 +1464,7 @@ fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 			V4_FH_OPAQUE_SIZE) == 0) {
 			LogDebug(COMPONENT_FSAL,
 				"Found hdl=%p name=%s",
-				my_hdl, my_hdl->vfile->file_name.c_str());
+				my_hdl, my_hdl->name.c_str());
 
 #ifdef USE_LTTNG
 			tracepoint(fsalmem, vn_create_handle, __func__,

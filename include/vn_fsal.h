@@ -43,7 +43,7 @@ fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 struct vn_fsal_obj_handle {
 	struct fsal_obj_handle obj_handle;
 	struct fsal_attrlist attrs;
-	vn_inode_no_t inode;
+	ViveInode inode;
 	char handle[V4_FH_OPAQUE_SIZE];
 	union {
 		struct {
@@ -52,17 +52,17 @@ struct vn_fsal_obj_handle {
 		} symlink;
 		struct {
 			ViveFile* vfile;
-			struct fsal_share share;
+			//struct fsal_share share;//used by vn_merge
 
 		};
 	} ;
 
-	//struct fsal_share share;
+	struct fsal_share share; 
 
-	struct glist_head dirents; /**< List of dirents pointing to obj */
+//	struct glist_head dirents; /**< List of dirents pointing to obj */
 	struct glist_head mfo_exp_entry; /**< Link into mfs_objs */
 	struct vn_fsal_export* mfo_exp; /**< Export owning object */
-	//char* m_name;	/**< Base name of obj, for debugging */
+	std::string name;	/**< Base name of obj, for debugging */
 	//uint32_t datasize;
 	//bool is_export;
 	int32_t refcount; /**< We persist handles, so we need a refcount */
@@ -128,16 +128,11 @@ static inline void _vn_free_handle(struct vn_fsal_obj_handle* hdl,
 	glist_del(&hdl->mfo_exp_entry);
 	hdl->mfo_exp = NULL;
 
-	if (hdl->vfile != NULL) {
-		delete hdl->vfile;
-		hdl->vfile = NULL;
-	}
 
 	gsh_free(hdl);
 }
 
 void vn_clean_export(struct vn_fsal_obj_handle* root);
-void vn_clean_all_dirents(struct vn_fsal_obj_handle* parent);
 
 /**
  * @brief FSAL Module wrapper for MEM
@@ -154,12 +149,12 @@ struct vivenas_fsal_module {
 	/** Config - Interval for UP call thread */
 	uint32_t up_interval;
 	/** Next unused inode */
-	uint64_t next_inode;
+	//uint64_t next_inode;
 	/** Config - number of async threads */
 	uint32_t async_threads;
 	/** Config - whether so use whence-is-name */
 	bool whence_is_name;
-	char* conf_path;
+	//char* conf_path;
 	struct glist_head  fs_obj; /* list of filesystem objects */
 	pthread_mutex_t   lock; /* lock to protect above list */
 };
@@ -179,7 +174,7 @@ struct vn_fsal_export {
 	/** The path for this export */
 	char* export_path;
 	/** Root object for this export */
-	struct vn_fsal_obj_handle* root_handle;
+	//struct vn_fsal_obj_handle* root_handle;
 	struct ViveFsContext *mount_ctx;
 	struct ViveFile* root;	/*< The root handle */
 	char* user_id;			/* user_id for this mount */

@@ -60,14 +60,14 @@ vn_invalidate(struct vn_fsal_export* mfe, struct vn_fsal_obj_handle* hdl)
 	fsal_status_t status;
 	struct gsh_buffdesc fh_desc;
 
-	LogFullDebug(COMPONENT_FSAL_UP, "invalidating %s", hdl->vfile->file_name.c_str());
+	LogFullDebug(COMPONENT_FSAL_UP, "invalidating %s", hdl->name.c_str());
 
 	hdl->obj_handle.obj_ops->handle_to_key(&hdl->obj_handle, &fh_desc);
 
 	status = up_ops->invalidate(up_ops, &fh_desc, FSAL_UP_INVALIDATE_CACHE);
 	if (FSAL_IS_ERROR(status)) {
 		LogMajor(COMPONENT_FSAL_UP, "error invalidating %s: %s",
-			hdl->vfile->file_name.c_str(), fsal_err_txt(status));
+			hdl->name.c_str(), fsal_err_txt(status));
 	}
 }
 
@@ -89,7 +89,7 @@ vn_invalidate_close(struct vn_fsal_export* mfe,
 	fsal_status_t status;
 	struct gsh_buffdesc fh_desc;
 
-	LogFullDebug(COMPONENT_FSAL_UP, "invalidate_closing %s", hdl->vfile->file_name.c_str());
+	LogFullDebug(COMPONENT_FSAL_UP, "invalidate_closing %s", hdl->name.c_str());
 
 	hdl->obj_handle.obj_ops->handle_to_key(&hdl->obj_handle, &fh_desc);
 
@@ -97,7 +97,7 @@ vn_invalidate_close(struct vn_fsal_export* mfe,
 		FSAL_UP_INVALIDATE_CACHE);
 	if (FSAL_IS_ERROR(status)) {
 		LogMajor(COMPONENT_FSAL_UP, "error invalidate_closing %s: %s",
-			hdl->vfile->file_name.c_str(), fsal_err_txt(status));
+			hdl->name.c_str(), fsal_err_txt(status));
 	}
 }
 
@@ -118,7 +118,7 @@ vn_update(struct vn_fsal_export* mfe, struct vn_fsal_obj_handle* hdl)
 	struct gsh_buffdesc fh_desc;
 	struct fsal_attrlist attrs;
 
-	LogFullDebug(COMPONENT_FSAL_UP, "updating %s", hdl->vfile->file_name.c_str());
+	LogFullDebug(COMPONENT_FSAL_UP, "updating %s", hdl->name.c_str());
 
 	hdl->obj_handle.obj_ops->handle_to_key(&hdl->obj_handle, &fh_desc);
 
@@ -136,7 +136,7 @@ vn_update(struct vn_fsal_export* mfe, struct vn_fsal_obj_handle* hdl)
 	status = up_ops->update(up_ops, &fh_desc, &attrs, fsal_up_update_null);
 	if (FSAL_IS_ERROR(status)) {
 		LogMajor(COMPONENT_FSAL_UP, "error updating %s: %s",
-			hdl->vfile->file_name.c_str(), fsal_err_txt(status));
+			hdl->name.c_str(), fsal_err_txt(status));
 	}
 }
 

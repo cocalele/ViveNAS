@@ -63,12 +63,7 @@ static const char vnfsal_name[] = "ViveNAS";
 static struct config_item mem_items[] = {
 	CONF_ITEM_UI32_CPP((char*)"Inode_Size", 0, 0x200000, 0,
 			   vivenas_fsal_module, inode_size),
-	CONF_ITEM_UI32_CPP((char*)"Up_Test_Interval", 0, UINT32_MAX, 0,
-			   vivenas_fsal_module, up_interval),
-	CONF_ITEM_UI32_CPP((char*)"Async_Threads", 0, 100, 0,
-			   vivenas_fsal_module, async_threads),
-	CONF_ITEM_BOOL_CPP((char*)"Whence_is_name", false,
-			   vivenas_fsal_module, whence_is_name),
+
 	CONFIG_EOL
 };
 
@@ -148,6 +143,8 @@ MODULE_INIT void vivenas_init(void)
 
 	PTHREAD_MUTEX_init(&ViveNASM.lock, NULL);
 	glist_init(&ViveNASM.fs_obj);
+	glist_init(&ViveNASM.vn_exports);
+	ViveNASM.inode_size = VIVE_INODE_SIZE;
 
 	LogDebug(COMPONENT_FSAL, "FSAL ViveNAS initialized");
 }

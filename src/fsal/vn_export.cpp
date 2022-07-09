@@ -25,27 +25,11 @@ extern "C" {
 #endif
 }
 
-static void vn_release_export(struct fsal_export* exp_hdl)
+extern "C" void vn_release_export(struct fsal_export* exp_hdl)
 {
 	struct vn_fsal_export* myself;
-
 	myself = container_of(exp_hdl, struct vn_fsal_export, m_export);
-
-	if (myself->root_handle != NULL) {
-		vn_clean_export(myself->root_handle);
-
-		fsal_obj_handle_fini(&myself->root_handle->obj_handle);
-
-		LogDebug(COMPONENT_FSAL,
-			"Releasing hdl=%p, name=%s",
-			myself->root_handle, myself->root_handle->vfile->file_name.c_str());
-
-		PTHREAD_RWLOCK_wrlock(&myself->mfe_exp_lock);
-		vn_free_handle(myself->root_handle);
-		PTHREAD_RWLOCK_unlock(&myself->mfe_exp_lock);
-
-		myself->root_handle = NULL;
-	}
+	S5LOG_INFO("vn_release_export, :%p", myself);
 
 	fsal_detach_export(exp_hdl->fsal, &exp_hdl->exports);
 	free_export_ops(exp_hdl);
@@ -233,6 +217,10 @@ fsal_status_t vn_create_export(struct fsal_module* fsal_hdl,
 	PTHREAD_RWLOCK_init(&myself->mfe_exp_lock, &attrs);
 	pthread_rwlockattr_destroy(&attrs);
 	fsal_export_init(&myself->m_export);
+	myself->m_export.fsal = fsal_hdl;
+	myself->m_export.up_ops = up_ops;
+
+
 	vn_export_ops_init(&myself->m_export.exp_ops);
 	_c.push_back([myself]() {free_export_ops(&myself->m_export); });
 	retval = load_config_from_node(parse_node,
@@ -244,8 +232,9 @@ fsal_status_t vn_create_export(struct fsal_module* fsal_hdl,
 	if (retval != 0) {
 		fsal_status = posix2fsal_status(EINVAL);
 		return fsal_status;	/* seriously bad */
-	}
 
+	}
+	S5LOG_INFO("Mount vivefs:%s", myself->db_path);
 	myself->mount_ctx = vn_mount(myself->db_path);
 	if(myself->mount_ctx == NULL){
 		fsal_status = posix2fsal_status(EIO);
@@ -253,20 +242,6 @@ fsal_status_t vn_create_export(struct fsal_module* fsal_hdl,
 
 	}
 	myself->root = myself->mount_ctx->root_file.get();
-
-	retval = fsal_attach_export(fsal_hdl, &myself->m_export.exports);
-
-	if (retval != 0) {
-		/* seriously bad */
-		LogMajor(COMPONENT_FSAL,
-			"Could not attach export");
-		fsal_status = posix2fsal_status(retval);
-		return fsal_status;	/* seriously bad */
-	}
-
-
-	myself->m_export.fsal = fsal_hdl;
-	myself->m_export.up_ops = up_ops;
 
 	/* Save the export path. */
 	myself->export_path = gsh_strdup(CTX_FULLPATH(op_ctx));
@@ -279,6 +254,17 @@ fsal_status_t vn_create_export(struct fsal_module* fsal_hdl,
 		"Created exp %p - %s",
 		myself, myself->export_path);
 
+	assert(atomic_fetch_int32_t(&fsal_hdl->refcount) > 0);
+	retval = fsal_attach_export(fsal_hdl, &myself->m_export.exports);
+	if (retval != 0) {
+		/* seriously bad */
+		LogMajor(COMPONENT_FSAL,
+			"Could not attach export");
+		fsal_status = posix2fsal_status(retval);
+		return fsal_status;	/* seriously bad */
+	}
+
+	S5LOG_INFO("vn_create_export :%p", myself);
 	_c.cancel_all();
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 

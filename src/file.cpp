@@ -29,8 +29,6 @@ using ROCKSDB_NAMESPACE::Slice;
 
 using nlohmann::json;
 using namespace std;
-#define VIVEFS_MAGIC_STR "vivefs_0"
-#define VIVEFS_VER 0x00010000
 
 //void to_json(json& j, const ViveInode& n)
 //{
@@ -483,7 +481,7 @@ void vn_release_iterator(ViveFsContext* ctx, struct vn_inode_iterator* it)
 
 int vn_fsync(ViveFsContext* ctx, struct ViveFile* file)
 {
-	return -ctx->db->SyncWAL().code();
+	return -ctx->db->FlushWAL(true).code();
 }
 
 int vn_close_file(ViveFsContext* ctx, struct ViveFile* file)
