@@ -51,7 +51,7 @@ static fsal_status_t vn_get_dynamic_info(struct fsal_export* exp_hdl,
 	infop->free_files = 0;
 	infop->avail_files = 0;
 	infop->time_delta.tv_sec = 0;
-	infop->time_delta.tv_nsec = FSAL_DEFAULT_TIME_DELTA_NSEC;
+	infop->time_delta.tv_nsec = 0;
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
@@ -244,7 +244,7 @@ fsal_status_t vn_create_export(struct fsal_module* fsal_hdl,
 	myself->root = myself->mount_ctx->root_file.get();
 
 	/* Save the export path. */
-	myself->export_path = gsh_strdup(CTX_FULLPATH(op_ctx));
+	myself->export_path = gsh_strdup(op_ctx->ctx_export->fullpath);
 	op_ctx->fsal_export = &myself->m_export;
 
 	/* Insert into exports list */

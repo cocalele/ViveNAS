@@ -116,7 +116,7 @@ vn_update(struct vn_fsal_export* mfe, struct vn_fsal_obj_handle* hdl)
 	const struct fsal_up_vector* up_ops = mfe->m_export.up_ops;
 	fsal_status_t status;
 	struct gsh_buffdesc fh_desc;
-	struct fsal_attrlist attrs;
+	struct attrlist attrs;
 
 	LogFullDebug(COMPONENT_FSAL_UP, "updating %s", hdl->name.c_str());
 

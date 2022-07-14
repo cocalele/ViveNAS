@@ -8,6 +8,8 @@ struct ViveSuperBlock;
 
 #define LBA_SIZE 4096
 #define LBA_SIZE_ORDER 12
+#define VIVEFS_EXTENT_SIZE (64<<10)
+
 struct pfs_extent_key {
 	union {
 		struct {

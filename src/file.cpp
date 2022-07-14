@@ -29,6 +29,7 @@ using ROCKSDB_NAMESPACE::Slice;
 
 using nlohmann::json;
 using namespace std;
+static __always_inline Status vn_persist_inode(ViveFsContext* ctx, Transaction* tx, ViveInode* inode);
 
 //void to_json(json& j, const ViveInode& n)
 //{
@@ -55,21 +56,33 @@ struct vn_inode_no_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no,
 	inode.i_links_count = 1;
 	inode.i_mode = mode;
 	inode.i_no = ctx->generate_inode_no();
-	char buf[VIVE_INODE_SIZE];
-	assert(sizeof(struct ViveInode) <= VIVE_INODE_SIZE);
+	inode.i_extent_size = VIVEFS_EXTENT_SIZE;
+	char buf[VIVEFS_INODE_SIZE];
+	assert(sizeof(struct ViveInode) <= VIVEFS_INODE_SIZE);
 	memset(buf, 0, sizeof(buf));
 	memcpy(buf, &inode, sizeof(struct ViveInode));
-	Slice file_key = format_string("%ld_%s", parent_inode_no, file_name);
+	string s1 = format_string("%ld_%s", parent_inode_no, file_name);
+	Slice file_key = s1;
 	
 	Transaction* tx = ctx->db->BeginTransaction(ctx->meta_opt);
 	DeferCall _1([tx]() {delete tx; });
 	Cleaner _c;
 	_c.push_back([tx]() {tx->Rollback(); });
 	PinnableSlice old_inode;
+
+
+	//PinnableSlice parent_inode_no_buf;
+	//Status s = tx->GetForUpdate(ctx->read_opt, ctx->meta_cf,
+	//	Slice((char*)&parent_inode_no, sizeof(parent_inode_no)), &parent_inode_no_buf);
+	//if (!s.ok()) {
+	//	S5LOG_ERROR("Failed lock parent inode:%ld, for:%s", parent_inode_no, s.ToString().c_str());
+	//	return vn_inode_no_t(-EIO);
+	//}
+
 	Status s = tx->GetForUpdate(ctx->read_opt, ctx->meta_cf, file_key, &old_inode);
-	if(!s.ok()){
-		S5LOG_ERROR("Failed lock key:%s, for:%s", file_key.data(), s.ToString().c_str());
-		return vn_inode_no_t (-EIO);
+	if(s.ok()){
+		S5LOG_ERROR("File already exists, key:%s", file_key.data());
+		return vn_inode_no_t (-EEXIST);
 	}
 	
 	Slice inode_no_as_slice((const char*)&inode.i_no, sizeof(inode.i_no));
@@ -78,7 +91,7 @@ struct vn_inode_no_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no,
 		S5LOG_ERROR("Failed put file inode:%s, for:%s", file_key.data(), s.ToString().c_str());
 		return vn_inode_no_t (-EIO);
 	}
-	s = tx->Put(ctx->meta_cf, inode_no_as_slice, Slice(buf, VIVE_INODE_SIZE));
+	s = vn_persist_inode(ctx, tx, &inode);
 	if (!s.ok()) {
 		S5LOG_ERROR("Failed put inode:%s, for:%s", file_key.data(), s.ToString().c_str());
 		return vn_inode_no_t (-EIO);
@@ -97,6 +110,7 @@ struct vn_inode_no_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no,
 	_c.cancel_all();
 	if (inode_out != NULL)
 		memcpy(inode_out, &inode, sizeof(inode));
+	S5LOG_INFO("Create file:%ld_%s, new ino:%ld, mode:00%o (octal)", parent_inode_no, file_name, inode.i_no, inode.i_mode);
 	return vn_inode_no_t(inode.i_no);
 }
 
@@ -105,35 +119,23 @@ int update_file_size(ViveFsContext* ctx, Transaction* tx, ViveInode* inode, size
 	assert(0);
 	return 0;
 }
-
-struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int32_t flags, int16_t mode)
+static __always_inline Status vn_persist_inode(ViveFsContext* ctx, Transaction* tx, ViveInode* inode)
 {
-	PinnableSlice inode_no_buf;
+	return tx->Put(ctx->meta_cf, Slice((char*)&inode->i_no, sizeof(inode->i_no)), Slice((char*)inode, VIVEFS_INODE_SIZE));
+}
+
+struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx,  vn_inode_no_t ino, int32_t flags, int16_t mode)
+{
 	PinnableSlice inode_buf;
-	Slice file_key = format_string("%ld_%s", parent_inode_no, file_name);
-	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
-	if(s.IsNotFound()){
-		S5LOG_INFO("Open file %s not exists", file_key.data());
-		if(flags & O_CREAT){
-			S5LOG_INFO("Creating file %s ...", file_key.data());
-			auto r = vn_create_file(ctx, parent_inode_no, file_name, mode, NULL);
-			if (r.to_int() < 0) {
-				return NULL;
-			}
-		}
-		return NULL;
-	}
-	
-	int64_t ino;
-	memcpy(&ino, inode_no_buf.data(), sizeof(ino));
-	s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, inode_no_buf, &inode_buf);
+	Status s;
+	s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
 	if (s.IsNotFound()) {
-		S5LOG_ERROR("Internal error, open file %s failed, inode lost", file_key.data());
+		S5LOG_ERROR("Internal error, open file ino:%d failed, inode not exists", ino.to_int());
 		return NULL;
 	}
 	ViveInode* inode = (ViveInode*)inode_buf.data();
 
-	if(flags & O_TRUNC) {
+	if (flags & O_TRUNC) {
 		Transaction* tx = ctx->db->BeginTransaction(ctx->meta_opt);
 		DeferCall _1([tx]() {delete tx; });
 		Cleaner _c;
@@ -141,20 +143,25 @@ struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const
 
 		//TODO: is PinnableSlice used correctly?
 		PinnableSlice inode_buf;
-		Status s = tx->GetForUpdate(ctx->read_opt, ctx->meta_cf, file_key, &inode_buf);
+		Status s = tx->GetForUpdate(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
 		if (!s.ok()) {
-			S5LOG_ERROR("Failed to open file:%s, for:%s", file_key.data(), s.ToString().c_str());
+			S5LOG_ERROR("Failed to open file:%ld, for:%s", ino.to_int(), s.ToString().c_str());
 			return NULL;
 		}
 		int64_t ext_cnt = (inode->i_size + inode->i_extent_size - 1) / inode->i_extent_size;
-		
-		for(int64_t i = 0;i<ext_cnt;i++){
+
+		for (int64_t i = 0; i < ext_cnt; i++) {
 			pfs_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
-			
+
 			tx->Delete(ctx->data_cf, Slice((const char*)&ext_k, sizeof(ext_k)));
 		}
 		inode->i_size = 0;
-		tx->Put(ctx->meta_cf, file_key, Slice((char*)inode, VIVE_INODE_SIZE));
+		s = vn_persist_inode(ctx, tx, inode);
+		if (!s.ok()) {
+			S5LOG_ERROR("Failed to persist inode:%d, for:%s", inode->i_no, s.ToString().c_str());
+			return NULL;
+		}
+
 		s = tx->Commit();
 		if (!s.ok()) {
 			S5LOG_ERROR("Failed to commit deleteing op, for:%s", s.ToString().c_str());
@@ -168,6 +175,34 @@ struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const
 	f->inode = new ViveInode;
 	memcpy(f->inode, inode, sizeof(*inode));
 	return f;
+}
+struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int32_t flags, int16_t mode)
+{
+	PinnableSlice inode_no_buf;
+	PinnableSlice inode_buf;
+	int64_t ino;
+
+	string s1 = format_string("%ld_%s", parent_inode_no, file_name);
+	Slice file_key = s1;
+	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
+	if(s.IsNotFound()){
+		S5LOG_INFO("Open file %s not exists", file_key.data());
+		if(flags & O_CREAT){
+			S5LOG_INFO("Creating file %s, mode:00%o(Octal) ...", file_key.data(), mode);
+			auto r = vn_create_file(ctx, parent_inode_no, file_name, mode, NULL);
+			ino = r.to_int();
+			if (ino < 0) {
+				return NULL;
+			}
+		} else {
+			return NULL;
+		}
+	} else {
+		memcpy(&ino, inode_no_buf.data(), sizeof(ino));
+	}
+	
+	
+	return vn_open_file_by_inode(ctx, vn_inode_no_t(ino), flags, mode);
 }
 
 ssize_t vn_write(ViveFsContext* ctx, struct ViveFile* file, const char * in_buf, size_t len, off_t offset )
@@ -401,7 +436,8 @@ ssize_t vn_readv(ViveFsContext* ctx, struct ViveFile* file, struct iovec out_iov
 
 int vn_delete(ViveFsContext* ctx, struct ViveFile* file)
 {
-	Slice file_key = format_string("%ld_%s", file->parent_inode_no, file->file_name.c_str());
+	string s1 = format_string("%ld_%s", file->parent_inode_no, file->file_name.c_str());
+	Slice file_key = s1;
 
 	Transaction* tx = ctx->db->BeginTransaction(ctx->meta_opt);
 	DeferCall _1([tx]() {delete tx; });
@@ -428,9 +464,10 @@ vn_inode_no_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, co
 {
 	PinnableSlice inode_buf;
 	PinnableSlice inode_no_buf;
-	Slice file_key = format_string("%ld_%s", parent_inode_no, file_name);
+
+	string s1 = format_string("%ld_%s", parent_inode_no, file_name);
+	Slice file_key = s1;
 	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
-	
 	if (s.IsNotFound()) {
 		
 		return vn_inode_no_t (-1);

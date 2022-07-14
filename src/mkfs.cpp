@@ -30,7 +30,6 @@ using namespace std;
 
 int vn_mkfs_vivefs(const char* db_path)
 {
-	TransactionDB* db;
 	Options options;
 	ConfigOptions config_options;
 	static std::shared_ptr<ROCKSDB_NAMESPACE::Env> env_guard;
@@ -53,27 +52,26 @@ int vn_mkfs_vivefs(const char* db_path)
 
 	// open DB
 	TransactionDBOptions tx_opt;
+	ViveFsContext ctx;
 
-	s = TransactionDB::Open(options, tx_opt, db_path, &db);
+	s = TransactionDB::Open(options, tx_opt, db_path, &ctx.db);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to open database:%s, %s", db_path, s.ToString().c_str());
 		return -s.code();
 	}
-	DeferCall _1([db]() {delete db; });
-
-	ViveFsContext ctx;
-	s = db->CreateColumnFamily(ColumnFamilyOptions(), "meta_cf", &ctx.meta_cf);
+	
+	s = ctx.db->CreateColumnFamily(ColumnFamilyOptions(), "meta_cf", &ctx.meta_cf);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF meta_cf, %s", s.ToString().c_str());
 		return -s.code();
 	}
 	
-	s = db->CreateColumnFamily(ColumnFamilyOptions(), "data_cf", &ctx.data_cf);
+	s = ctx.db->CreateColumnFamily(ColumnFamilyOptions(), "data_cf", &ctx.data_cf);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF data_cf, %s", s.ToString().c_str());
 		return -s.code();
 	}
-	Transaction* tx = db->BeginTransaction(ctx.meta_opt);
+	Transaction* tx = ctx.db->BeginTransaction(ctx.meta_opt);
 	DeferCall _2([tx]() {delete tx; });
 	Cleaner _c;
 	_c.push_back([tx]() {tx->Rollback(); });
@@ -91,7 +89,7 @@ int vn_mkfs_vivefs(const char* db_path)
 
 
 	PinnableSlice v;
-	s = db->Get(ReadOptions(), ctx.meta_cf, INODE_SEED_KEY, &v);
+	s = ctx.db->Get(ReadOptions(), ctx.meta_cf, INODE_SEED_KEY, &v);
 	if (!s.ok()) {
 		S5LOG_ERROR("Failed GET key:%s, %s", INODE_SEED_KEY, s.ToString().c_str());
 	}
@@ -99,13 +97,10 @@ int vn_mkfs_vivefs(const char* db_path)
 		fprintf(stderr, "Succeed get key:%s\n", INODE_SEED_KEY);
 	}
 
-	db->Flush(FlushOptions(), cfs );
+	ctx.db->Flush(FlushOptions(), cfs );
 
 	_c.cancel_all();
-	CHECKED_CALL(db->DestroyColumnFamilyHandle(ctx.meta_cf));
-	CHECKED_CALL(db->DestroyColumnFamilyHandle(ctx.data_cf));
-	CHECKED_CALL(db->FlushWAL(true));
-	CHECKED_CALL(db->Close());
+
 
 	return 0;
 }

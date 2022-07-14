@@ -10,7 +10,6 @@
 extern "C"{
 #include "fsal.h"
 #include "fsal_convert.h"
-#include "FSAL/fsal_localfs.h"
 #include "FSAL/fsal_commonlib.h"
 #include "city.h"
 #include "nfs_file_handle.h"
@@ -239,8 +238,8 @@ void vn_clean_export(struct vn_fsal_obj_handle* root)
 }
 
 
-static void vn_copy_attrs_mask(struct fsal_attrlist* attrs_in,
-	struct fsal_attrlist* attrs_out)
+static void vn_copy_attrs_mask(struct attrlist* attrs_in,
+	struct attrlist* attrs_out)
 {
 	/* Use full timer resolution */
 	now(&attrs_out->ctime);
@@ -326,7 +325,6 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 			struct vn_fsal_export* mfe)
 {
 	struct vn_fsal_obj_handle* hdl;
-	struct fsal_filesystem* fs = mfe->m_export.root_fs;
 	struct fsal_export* exp_hdl = &mfe->m_export;
 
 	hdl = (vn_fsal_obj_handle*)gsh_calloc(1, sizeof(struct vn_fsal_obj_handle));
@@ -335,24 +333,21 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 	package_vn_handle(hdl);
 	hdl->name = name;
 	hdl->obj_handle.type = posix2fsal_type(inode->i_mode);
+	S5LOG_DEBUG("new file fsal type:00%o, mode:00%o", hdl->obj_handle.type, inode->i_mode);
 	//hdl->dev = posix2fsal_devt(stat->st_dev);
 	//hdl->obj_handle.up_ops = mfe->m_export.up_ops;
-	hdl->obj_handle.fs = fs;
+
 	LogDebug(COMPONENT_FSAL,
-		"Creating object %p for file %s of type %s on filesystem %p ",
-		hdl, name, object_file_type_to_str(hdl->obj_handle.type),
-		fs);
+		"Creating object %p for file %s of type %s  ",
+		hdl, name, object_file_type_to_str(hdl->obj_handle.type));
 
 	//hdl->vfile = NULL;
-
 
 	fsal_obj_handle_init(&hdl->obj_handle, exp_hdl,
 		posix2fsal_type(inode->i_mode));
 	
-	if (fs) {
 
-		hdl->obj_handle.fsid = fs->fsid;
-	}
+	hdl->obj_handle.fsid = posix2fsal_fsid(0); //posix2fsal_fsid(inode->i_dev);
 	hdl->obj_handle.fileid = inode->i_no;
 #ifdef VFS_NO_MDCACHE
 	hdl->obj_handle.state_hdl = vfs_state_locate(&hdl->obj_handle);
@@ -360,7 +355,7 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 	hdl->obj_handle.obj_ops = &ViveNASM.handle_ops;
 	memcpy(&hdl->inode, inode, sizeof(hdl->inode));
 	hdl->refcount = 1;
-	S5LOG_DEBUG("alloc vn_fsal_obj_handle:%p", hdl);
+	S5LOG_DEBUG("alloc vn_fsal_obj_handle:%p name:%s", hdl, name);
 	return hdl;
 }
 
@@ -368,9 +363,9 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 	object_file_type_t type,
 	const char* name,
-	struct fsal_attrlist* attrs_in,
+	struct attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_export* mfe = container_of(op_ctx->fsal_export,
 		struct vn_fsal_export,
@@ -426,7 +421,7 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 static fsal_status_t vn_lookup(struct fsal_obj_handle* parent,
 	const char* path,
 	struct fsal_obj_handle** handle,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* myself, * hdl = NULL;
 	fsal_status_t status;
@@ -469,14 +464,39 @@ out:
 	return status;
 }
 
-static void set_attr_from_inode(struct fsal_attrlist *attrs, ViveInode* inode)
+static void set_attr_from_inode(struct attrlist *attrs, ViveInode* inode)
 {
-	attrs->fileid = inode->i_no;
-	//attrs->atime = inode->i_atime;
-	//attrs->ctime = inode->i_ctime;
-	attrs->filesize = inode->i_size;
-	attrs->mode = inode->i_mode;
-	attrs->type = posix2fsal_type(inode->i_mode);
+
+	//attrs->valid_mask |= ATTR_TYPE | ATTR_FSID | ATTR_RAWDEV | ATTR_FILEID;
+
+	//attrs->supported = ATTRS_POSIX;
+	//attrs->fileid = inode->i_no;
+	////attrs->atime = inode->i_atime;
+	////attrs->ctime = inode->i_ctime;
+	//attrs->filesize = inode->i_size;
+	//attrs->mode = inode->i_mode;
+	//attrs->type = posix2fsal_type(inode->i_mode);
+	//attrs->owner = inode->i_uid;
+	//attrs->group = inode->i_gid;
+	//attrs->numlinks = inode->i_links_count;
+	//attrs->spaceused = 0;
+
+	struct stat fstat;
+
+	fstat.st_atime = inode->i_atime;
+	fstat.st_ctime = inode->i_ctime;
+	fstat.st_blksize = 4096;
+	fstat.st_dev = 0;
+	fstat.st_ino = inode->i_no;
+	fstat.st_nlink = inode->i_links_count;
+	fstat.st_gid = inode->i_gid;
+	fstat.st_uid = inode->i_uid;
+	fstat.st_mode = inode->i_mode;
+	fstat.st_size = inode->i_size;
+	fstat.st_blocks = (fstat.st_size + fstat.st_blksize - 1) / fstat.st_blksize;
+
+	posix2fsal_attributes_all(&fstat, attrs);
+
 }
 
 /**
@@ -497,8 +517,9 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	bool* eof)
 {
 	struct vn_fsal_obj_handle* myself;
-	fsal_cookie_t cookie = 0;
-	struct fsal_attrlist attrs;
+	//fsal_cookie_t cookie = 0;
+	int64_t read_off = 0;
+	struct attrlist attrs;
 	enum fsal_dir_result cb_rc;
 	int count = 0;
 	myself = container_of(dir_hdl,
@@ -506,7 +527,7 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 		obj_handle);
 
 	if (whence != NULL)
-		cookie = *whence;
+		read_off = *whence;
 
 	*eof = true;
 
@@ -523,22 +544,20 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	 * the lock.
 	 */
 	op_ctx->fsal_private = dir_hdl;
+	S5LOG_DEBUG("read dir from offset:%ld", read_off);
 
 	struct vn_inode_iterator* it;
-	if(whence == NULL){
-		it = vn_begin_iterate_dir(myself->mfo_exp->mount_ctx, myself->inode.i_no);
-		S5LOG_DEBUG("Create dir iterator:%p", it);
-	}
-	else {
-		it = (struct vn_inode_iterator*)whence;
-		S5LOG_DEBUG("reuse dir iterator:%p", it);
+	it = vn_begin_iterate_dir(myself->mfo_exp->mount_ctx, myself->inode.i_no);
+	S5LOG_DEBUG("Create dir iterator:%p", it);
 
-	}
 	
 	string entry_name;
 	ViveInode* inode;
+	int64_t i = 0;
 	/* Always run in index order */
-	for (inode = vn_next_inode(myself->mfo_exp->mount_ctx, it, &entry_name); inode != NULL;) {
+	for (inode = vn_next_inode(myself->mfo_exp->mount_ctx, it, &entry_name) ; inode != NULL; i++) {
+		if (i < read_off)
+			continue;
 		fsal_prepare_attrs(&attrs, attrmask);
 		set_attr_from_inode(&attrs, inode);
 
@@ -546,7 +565,7 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 		struct vn_fsal_obj_handle *hdl = vn_alloc_handle(myself, entry_name.c_str(), inode, myself->mfo_exp);
 				
 		cb_rc = cb(entry_name.c_str(), &hdl->obj_handle, &attrs,
-			dir_state, cookie);
+			dir_state, i);
 
 		fsal_release_attrs(&attrs);
 
@@ -593,9 +612,9 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_mkdir(struct fsal_obj_handle* dir_hdl,
 	const char* name,
-	struct fsal_attrlist* attrs_in,
+	struct attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -625,9 +644,9 @@ static fsal_status_t vn_mkdir(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_mknode(struct fsal_obj_handle* dir_hdl,
 	const char* name, object_file_type_t nodetype,
-	struct fsal_attrlist* attrs_in,
+	struct attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* hdl, * parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -660,9 +679,9 @@ static fsal_status_t vn_mknode(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_symlink(struct fsal_obj_handle* dir_hdl,
 	const char* name, const char* link_path,
-	struct fsal_attrlist* attrs_in,
+	struct attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* hdl, * parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -719,7 +738,7 @@ static fsal_status_t vn_readlink(struct fsal_obj_handle* obj_hdl,
  * @return FSAL status
  */
 static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
-	struct fsal_attrlist* outattrs)
+	struct attrlist* outattrs)
 {
 	struct vn_fsal_obj_handle* myself =
 		container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -736,21 +755,22 @@ static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
 		myself,
 		myself->name.c_str(),
 		myself->attrs.numlinks);
-	struct stat fstat;
-	
-	fstat.st_atime = myself->inode.i_atime;
-	fstat.st_ctime = myself->inode.i_ctime;
-	fstat.st_blksize = 4096;
-	fstat.st_dev = 0;
-	fstat.st_ino = myself->inode.i_no;
-	fstat.st_nlink = myself->inode.i_links_count;
-	fstat.st_gid = myself->inode.i_gid;
-	fstat.st_uid = myself->inode.i_uid;
-	fstat.st_mode = myself->inode.i_mode;
-	fstat.st_size = myself->inode.i_size;
-	fstat.st_blocks = (fstat.st_size + fstat.st_blksize  -1)/ fstat.st_blksize;
+	//struct stat fstat;
+	//
+	//fstat.st_atime = myself->inode.i_atime;
+	//fstat.st_ctime = myself->inode.i_ctime;
+	//fstat.st_blksize = 4096;
+	//fstat.st_dev = 0;
+	//fstat.st_ino = myself->inode.i_no;
+	//fstat.st_nlink = myself->inode.i_links_count;
+	//fstat.st_gid = myself->inode.i_gid;
+	//fstat.st_uid = myself->inode.i_uid;
+	//fstat.st_mode = myself->inode.i_mode;
+	//fstat.st_size = myself->inode.i_size;
+	//fstat.st_blocks = (fstat.st_size + fstat.st_blksize  -1)/ fstat.st_blksize;
 
-	posix2fsal_attributes_all(&fstat, &myself->attrs);
+	//posix2fsal_attributes_all(&fstat, &myself->attrs);
+	set_attr_from_inode(&myself->attrs, &myself->inode);
 	fsal_copy_attrs(outattrs, &myself->attrs, false);
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -772,7 +792,7 @@ static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
 fsal_status_t vn_setattr2(struct fsal_obj_handle* obj_hdl,
 	bool bypass,
 	struct state_t* state,
-	struct fsal_attrlist* attrs_set)
+	struct attrlist* attrs_set)
 {
 	struct vn_fsal_obj_handle* myself =
 		container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -861,7 +881,7 @@ static fsal_status_t vn_unlink(struct fsal_obj_handle* dir_hdl,
 
 	
 	if(__sync_sub_and_fetch(&myself->inode.i_links_count, 1) == 0) {
-		LogInfo(COMPONENT_FSAL, "Delete file:%ld_%s", parent_dir->inode.i_no, name);
+		LogInfo(COMPONENT_FSAL, "Delete file:%ld_%s", (long)parent_dir->inode.i_no, name);
 		vn_delete(myself->mfo_exp->mount_ctx,  myself->vfile);
 	} else {
 		S5LOG_ERROR("BUG: link count not persisted if not 0");
@@ -955,10 +975,10 @@ fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
 	fsal_openflags_t openflags,
 	enum fsal_create_mode createmode,
 	const char* name,
-	struct fsal_attrlist* attrs_set,
+	struct attrlist* attrs_set,
 	fsal_verifier_t verifier,
 	struct fsal_obj_handle** new_obj,
-	struct fsal_attrlist* attrs_out,
+	struct attrlist* attrs_out,
 	bool* caller_perm_check)
 {
 	struct vn_fsal_obj_handle* myself = NULL;
@@ -967,28 +987,117 @@ fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
 	int posix_flags = 0;
 	mode_t unix_mode = 0000;
 
-
 	myself = container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
-
-	fsal2posix_openflags(openflags, &posix_flags);
-	unix_mode = myself->inode.i_mode &
+	/* Fetch the mode attribute to use in the openat system call. */
+	unix_mode = fsal2unix_mode(attrs_set->mode) &
 		~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
 
+	fsal2posix_openflags(openflags, &posix_flags);
+	if (createmode != FSAL_NO_CREATE) {
+		/* Now add in O_CREAT and O_EXCL. */
+		posix_flags |= O_CREAT;
+
+		/* And if we are at least FSAL_GUARDED, do an O_EXCL create. */
+		if (createmode >= FSAL_GUARDED)
+			posix_flags |= O_EXCL;
+		/* Don't set the mode if we later set the attributes */
+		FSAL_UNSET_MASK(attrs_set->valid_mask, ATTR_MODE);
+	}
+
+
+	S5LOG_DEBUG("open file parnet:%s name:%s flags:0x%x posix_flags:0x%x mode:00%o (octal)", 
+		myself->name.c_str(), name, openflags, posix_flags, unix_mode);
+
+	ViveFile* f = NULL;
 	//If Name is NULL, obj_hdl is the file itself, otherwise obj_hdl is the parent directory.
 	if (name == NULL) {
-		if (myself->vfile != NULL)
+		
+
+#if 0
+
+		/* This is an open by handle */
+		if (state != NULL) {
+			/* Prepare to take the share reservation, but only if we
+			 * are called with a valid state (if state is NULL the
+			 * caller is a stateless create such as NFS v3 CREATE).
+			 */
+
+			 /* This can block over an I/O operation. */
+			PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
+
+			/* Check share reservation conflicts. */
+			fsal_status_t status = check_share_conflict(&myself->share,
+				openflags, false);
+
+			if (FSAL_IS_ERROR(status)) {
+				PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+				return status;
+			}
+
+			/* Take the share reservation now by updating the
+			 * counters.
+			 */
+			update_share_counters(&myself->share, FSAL_O_CLOSED,
+				openflags);
+
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+		}
+		
+			
+			
+		
+
+
+
+		PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
+
+		if (myself->vfile != NULL) {
+			f = myself->vfile;
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 			goto done;
+		}
+		else {
+			
+			f = vn_open_file_by_inode(myself->mfo_exp->mount_ctx, vn_inode_no_t(myself->inode.i_no), posix_flags, unix_mode);
+			myself->vfile = f;
+			
+		}
+		atomic_add_int32_t(&myself->refcount, 1);
+		*new_obj = &myself->obj_handle;
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+#endif
+
+		f = vn_open_file_by_inode(myself->mfo_exp->mount_ctx, vn_inode_no_t(myself->inode.i_no), posix_flags, unix_mode);
+		//myself->vfile = f;
+		struct vn_fsal_obj_handle* file_hdl = vn_alloc_handle(myself, name, f->inode, myself->mfo_exp);
+		PTHREAD_RWLOCK_wrlock(&file_hdl->obj_handle.obj_lock);
+		atomic_add_int32_t(&file_hdl->refcount, 1);
+
+		file_hdl->vfile = f;
+		*new_obj = &file_hdl->obj_handle;
+		PTHREAD_RWLOCK_unlock(&file_hdl->obj_handle.obj_lock);
 	} else {
-		ViveFile* f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.i_no, name, posix_flags, unix_mode);
+		//if (attrs_set->type == REGULAR_FILE)
+		//	unix_mode |= S_IFREG;
+		//else{
+		//	S5LOG_ERROR("Unsupported file type:%d", attrs_set->type);
+		//	return fsalstat(ERR_FSAL_NOTSUPP, 0);;
+		//}
+		unix_mode |= S_IFREG;
+		f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.i_no, name, posix_flags, unix_mode);
 		if (f == NULL)
 			return fsalstat(ERR_FSAL_NOENT, 0);
 		struct vn_fsal_obj_handle* file_hdl = vn_alloc_handle(myself, name, f->inode, myself->mfo_exp);
+		PTHREAD_RWLOCK_wrlock(&myself->obj_handle.obj_lock);
+		atomic_add_int32_t(&file_hdl->refcount, 1);
+
 		file_hdl->vfile = f;
 		*new_obj = &file_hdl->obj_handle;
-
+		PTHREAD_RWLOCK_unlock(&myself->obj_handle.obj_lock);
 	}
-
+	
 done:
+	set_attr_from_inode(attrs_out, f->inode);
 	created = (posix_flags & O_EXCL) != 0;
 	*caller_perm_check = !created;
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -1340,8 +1449,8 @@ static fsal_status_t vn_merge(struct fsal_obj_handle* old_hdl,
 			obj_handle);
 
 		/* This can block over an I/O operation. */
-		status = merge_share(old_hdl, &old->share,
-			&newh->share);
+		S5LOG_WARN("Merge share :%p and %p", &old->share, &newh->share);
+		status = merge_share(&old->share, &newh->share);
 	}
 
 	return status;
@@ -1390,7 +1499,7 @@ void vn_handle_ops_init(struct fsal_obj_ops* ops)
 fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 	const char* path,
 	struct fsal_obj_handle** obj_hdl,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct vn_fsal_export* mfe;
 
@@ -1433,7 +1542,7 @@ fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 	struct gsh_buffdesc* hdl_desc,
 	struct fsal_obj_handle** obj_hdl,
-	struct fsal_attrlist* attrs_out)
+	struct attrlist* attrs_out)
 {
 	struct glist_head* glist;
 	struct fsal_obj_handle* hdl;

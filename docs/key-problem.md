@@ -65,9 +65,11 @@ inode的大小为256Byte，使用和ext4几乎兼容的格式。
 
 __如何从文件名查到inode ?__
 
-在一个单独的column family 里，建立 从file name -> inode的映射
+在一个单独的column family 里，建立 从file name -> inode_no的映射, 然后再由inode_no查找到inode.
 
-`file_name_key -> inode_data_struct` 这个映射保存在单独的column family里, 即"meta_cf"。 如前所述，inode的大小为256 Bytes。
+
+`file_name_key -> inode_no`, inode_no为一个int64, 
+`inode_no      -> inode_data_struct` 这个映射保存在单独的column family里, 即"meta_cf"。 如前所述，inode的大小为256 Bytes。
 `file_name_key`的组成为：
 `file_name_key := <parent_dir_inode_no> +  '_' + <file_name_without_path>`
 也就是说，打开一个文件时需要一层一层找到这个文件所在的目录的inode_no, 然后再和文件名拼接成一个key， 去查询最终的文件inode_no.
@@ -96,6 +98,10 @@ __如何从文件名查到inode ?__
 是否可以不使用目录文件? 
 目录文件的目的是为了ls目录下面的文件。如果不使用目录文件，也可以借助类似rocksdb的prefix search这样的功能，比如要ls /A/B 这个目录，我们只需要`prefix search '102_'` 开头的key就可以了。遗憾的是LSM tree对prefix search是非常低效的，文件系统的规模变大以后，很可能导致所有Level的所有文件都被频繁全量访问。
 
+不直接从file_name_key 映射到inode结构体，而是先映射到inode_no， 再转到inode，是为了方便write操作：write的时候可能需要更新inode， 这就需要一个Key。
+如果key是file_name_key， 那我们就要在open file保存file_name，从而对rename操作造成麻烦。而且以file_name_key查找不如以inode_no为key进行查找高效。
+
+inode_no在文件创建后无论rename, move都不会改变。用户执行rename, move就不会影响已打开的文件。
 ### 三，Merge 操作
 前提：
 _如果一次io 操作跨越了两个extent, 要分成两笔io 进行。后面讨论Merge 都只限定在单个k-v内部。_

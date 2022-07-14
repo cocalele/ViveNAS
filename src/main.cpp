@@ -101,6 +101,7 @@ ViveFsContext* vn_mount(const char* db_path) {
     s = TransactionDB::Open(options, tx_opt, ctx->db_path.c_str(), column_families, &handles, &ctx->db);
     if(!s.ok()){
         S5LOG_ERROR( "Failed open db:%s, %s", ctx->db_path.c_str(), s.ToString().c_str());
+        return NULL;
     }
     ctx->default_cf = handles[0];
     ctx->meta_cf = handles[1];
@@ -148,7 +149,7 @@ ViveFsContext* vn_mount(const char* db_path) {
 	ctx->root_file.reset(f);
 
 
-
+    _c.cancel_all();
     return ctx;
 }
 
@@ -170,4 +171,13 @@ ViveFsContext::ViveFsContext() : db(NULL),default_cf(NULL),meta_cf(NULL),data_cf
 int64_t ViveFsContext::generate_inode_no()
 {
 	return inode_seed++;
+}
+ViveFsContext::~ViveFsContext()
+{
+	db->DestroyColumnFamilyHandle(meta_cf);
+	db->DestroyColumnFamilyHandle(data_cf);
+	db->FlushWAL(true);
+	db->Close();
+
+    delete db;
 }

@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <linux/types.h>
 
-#define VIVE_INODE_SIZE 256
+#define VIVEFS_INODE_SIZE 256
 #define INODE_SEED_KEY "__inode_seed__"
 
 
@@ -74,6 +74,7 @@ struct ViveFile {
 
 struct ViveFsContext {
 	ViveFsContext();
+	~ViveFsContext();
 	std::string db_path;
 	ROCKSDB_NAMESPACE::TransactionDB* db;
 	ROCKSDB_NAMESPACE::ColumnFamilyHandle* default_cf;
@@ -106,6 +107,7 @@ struct vn_inode_iterator;
 vn_inode_no_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, /*out*/ ViveInode* inode);
 vn_inode_no_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int16_t mode, /*out*/ ViveInode* inode_out);
 struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int32_t flags, int16_t mode);
+struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, vn_inode_no_t ino, int32_t flags, int16_t mode);
 ssize_t vn_write(ViveFsContext* ctx, struct ViveFile* file, const char* in_buf, size_t len, off_t offset);
 ssize_t vn_writev(ViveFsContext* ctx, struct ViveFile* file, struct iovec in_iov[], int iov_cnt, off_t offset);
 ssize_t vn_read(ViveFsContext* ctx, struct ViveFile* file, char* out_buf, size_t len, off_t offset);

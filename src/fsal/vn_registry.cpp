@@ -50,8 +50,8 @@ static const char vnfsal_name[] = "ViveNAS";
 	  type : CONFIG_UINT32,		    \
 	  u:{ui32 :{minval : _min_,		    \
 	  maxval : _max_,		    \
-	  def : _def_,			    \
-	  zero_ok : (_min_ == 0)}},	    \
+	  def : _def_			    \
+	            }},	    \
 	  off : offsetof(struct _struct_, _mem_)   \
 	}
 #define CONF_ITEM_BOOL_CPP(_name_, _def_, _struct_, _mem_) \
@@ -144,7 +144,7 @@ MODULE_INIT void vivenas_init(void)
 	PTHREAD_MUTEX_init(&ViveNASM.lock, NULL);
 	glist_init(&ViveNASM.fs_obj);
 	glist_init(&ViveNASM.vn_exports);
-	ViveNASM.inode_size = VIVE_INODE_SIZE;
+	ViveNASM.inode_size = VIVEFS_INODE_SIZE;
 
 	LogDebug(COMPONENT_FSAL, "FSAL ViveNAS initialized");
 }
