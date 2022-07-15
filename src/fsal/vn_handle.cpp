@@ -10,6 +10,7 @@
 extern "C"{
 #include "fsal.h"
 #include "fsal_convert.h"
+#include "FSAL/fsal_localfs.h"
 #include "FSAL/fsal_commonlib.h"
 #include "city.h"
 #include "nfs_file_handle.h"
@@ -238,8 +239,8 @@ void vn_clean_export(struct vn_fsal_obj_handle* root)
 }
 
 
-static void vn_copy_attrs_mask(struct attrlist* attrs_in,
-	struct attrlist* attrs_out)
+static void vn_copy_attrs_mask(struct fsal_attrlist* attrs_in,
+	struct fsal_attrlist* attrs_out)
 {
 	/* Use full timer resolution */
 	now(&attrs_out->ctime);
@@ -325,6 +326,7 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 			struct vn_fsal_export* mfe)
 {
 	struct vn_fsal_obj_handle* hdl;
+	struct fsal_filesystem* fs = mfe->m_export.root_fs;
 	struct fsal_export* exp_hdl = &mfe->m_export;
 
 	hdl = (vn_fsal_obj_handle*)gsh_calloc(1, sizeof(struct vn_fsal_obj_handle));
@@ -338,16 +340,19 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 	//hdl->obj_handle.up_ops = mfe->m_export.up_ops;
 
 	LogDebug(COMPONENT_FSAL,
-		"Creating object %p for file %s of type %s  ",
-		hdl, name, object_file_type_to_str(hdl->obj_handle.type));
+		"Creating object %p for file %s of type %s on filesystem %p ",
+		hdl, name, object_file_type_to_str(hdl->obj_handle.type),
+		fs);
 
 	//hdl->vfile = NULL;
 
 	fsal_obj_handle_init(&hdl->obj_handle, exp_hdl,
 		posix2fsal_type(inode->i_mode));
 	
+	if (fs) {
 
-	hdl->obj_handle.fsid = posix2fsal_fsid(0); //posix2fsal_fsid(inode->i_dev);
+		hdl->obj_handle.fsid = fs->fsid;
+	}
 	hdl->obj_handle.fileid = inode->i_no;
 #ifdef VFS_NO_MDCACHE
 	hdl->obj_handle.state_hdl = vfs_state_locate(&hdl->obj_handle);
@@ -363,9 +368,9 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 	object_file_type_t type,
 	const char* name,
-	struct attrlist* attrs_in,
+	struct fsal_attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_export* mfe = container_of(op_ctx->fsal_export,
 		struct vn_fsal_export,
@@ -421,7 +426,7 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 static fsal_status_t vn_lookup(struct fsal_obj_handle* parent,
 	const char* path,
 	struct fsal_obj_handle** handle,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* myself, * hdl = NULL;
 	fsal_status_t status;
@@ -464,7 +469,7 @@ out:
 	return status;
 }
 
-static void set_attr_from_inode(struct attrlist *attrs, ViveInode* inode)
+static void set_attr_from_inode(struct fsal_attrlist *attrs, ViveInode* inode)
 {
 
 	//attrs->valid_mask |= ATTR_TYPE | ATTR_FSID | ATTR_RAWDEV | ATTR_FILEID;
@@ -519,7 +524,7 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	struct vn_fsal_obj_handle* myself;
 	//fsal_cookie_t cookie = 0;
 	int64_t read_off = 0;
-	struct attrlist attrs;
+	struct fsal_attrlist attrs;
 	enum fsal_dir_result cb_rc;
 	int count = 0;
 	myself = container_of(dir_hdl,
@@ -612,9 +617,9 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_mkdir(struct fsal_obj_handle* dir_hdl,
 	const char* name,
-	struct attrlist* attrs_in,
+	struct fsal_attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -644,9 +649,9 @@ static fsal_status_t vn_mkdir(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_mknode(struct fsal_obj_handle* dir_hdl,
 	const char* name, object_file_type_t nodetype,
-	struct attrlist* attrs_in,
+	struct fsal_attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* hdl, * parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -679,9 +684,9 @@ static fsal_status_t vn_mknode(struct fsal_obj_handle* dir_hdl,
  */
 static fsal_status_t vn_symlink(struct fsal_obj_handle* dir_hdl,
 	const char* name, const char* link_path,
-	struct attrlist* attrs_in,
+	struct fsal_attrlist* attrs_in,
 	struct fsal_obj_handle** new_obj,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_obj_handle* hdl, * parent =
 		container_of(dir_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -738,7 +743,7 @@ static fsal_status_t vn_readlink(struct fsal_obj_handle* obj_hdl,
  * @return FSAL status
  */
 static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
-	struct attrlist* outattrs)
+	struct fsal_attrlist* outattrs)
 {
 	struct vn_fsal_obj_handle* myself =
 		container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -792,7 +797,7 @@ static fsal_status_t vn_getattrs(struct fsal_obj_handle* obj_hdl,
 fsal_status_t vn_setattr2(struct fsal_obj_handle* obj_hdl,
 	bool bypass,
 	struct state_t* state,
-	struct attrlist* attrs_set)
+	struct fsal_attrlist* attrs_set)
 {
 	struct vn_fsal_obj_handle* myself =
 		container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
@@ -975,10 +980,10 @@ fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
 	fsal_openflags_t openflags,
 	enum fsal_create_mode createmode,
 	const char* name,
-	struct attrlist* attrs_set,
+	struct fsal_attrlist* attrs_set,
 	fsal_verifier_t verifier,
 	struct fsal_obj_handle** new_obj,
-	struct attrlist* attrs_out,
+	struct fsal_attrlist* attrs_out,
 	bool* caller_perm_check)
 {
 	struct vn_fsal_obj_handle* myself = NULL;
@@ -1499,7 +1504,7 @@ void vn_handle_ops_init(struct fsal_obj_ops* ops)
 fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 	const char* path,
 	struct fsal_obj_handle** obj_hdl,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct vn_fsal_export* mfe;
 
@@ -1542,7 +1547,7 @@ fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 	struct gsh_buffdesc* hdl_desc,
 	struct fsal_obj_handle** obj_hdl,
-	struct attrlist* attrs_out)
+	struct fsal_attrlist* attrs_out)
 {
 	struct glist_head* glist;
 	struct fsal_obj_handle* hdl;

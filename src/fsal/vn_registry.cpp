@@ -50,8 +50,8 @@ static const char vnfsal_name[] = "ViveNAS";
 	  type : CONFIG_UINT32,		    \
 	  u:{ui32 :{minval : _min_,		    \
 	  maxval : _max_,		    \
-	  def : _def_			    \
-	            }},	    \
+	  def : _def_,			    \
+	  zero_ok : (_min_ == 0)}},	    \
 	  off : offsetof(struct _struct_, _mem_)   \
 	}
 #define CONF_ITEM_BOOL_CPP(_name_, _def_, _struct_, _mem_) \

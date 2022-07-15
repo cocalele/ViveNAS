@@ -27,12 +27,12 @@ enum async_types {
 fsal_status_t vn_lookup_path(struct fsal_export* exp_hdl,
 	const char* path,
 	struct fsal_obj_handle** handle,
-	struct attrlist* attrs_out);
+	struct fsal_attrlist* attrs_out);
 
 fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 	struct gsh_buffdesc* hdl_desc,
 	struct fsal_obj_handle** handle,
-	struct attrlist* attrs_out);
+	struct fsal_attrlist* attrs_out);
 
 /*
  * MEM internal object handle
@@ -42,7 +42,7 @@ fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 
 struct vn_fsal_obj_handle {
 	struct fsal_obj_handle obj_handle;
-	struct attrlist attrs;
+	struct fsal_attrlist attrs;
 	ViveInode inode;
 	char handle[V4_FH_OPAQUE_SIZE];
 	union {
