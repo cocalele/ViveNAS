@@ -32,6 +32,8 @@ add_definitions(-D_XOPEN_SOURCE)
 
 INCLUDE_DIRECTORIES(include  rocksdb rocksdb/include PureFlash/common/include PureFlash/pfs/nlohmann_json/include 
                     ${GANESHA_SRC}/src/include ${GANESHA_SRC}/build/include ${GANESHA_SRC}/src/libntirpc/ntirpc)
+#add_subdirectory(FSAL_MEM)
+
 set (VIVE_SRC 
 	src/pfaof.cpp
 	src/main.cpp

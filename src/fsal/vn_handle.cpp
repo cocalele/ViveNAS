@@ -30,7 +30,7 @@ uint64_t vn_inode_number = 1;
 
 /* helpers
  */
-
+#define VFILE_FROM_HANDLE(h) (h->mh_file.fd.vf)
 static inline int
 vn_n_cmpf(const struct avltree_node* lhs,
 	const struct avltree_node* rhs)
@@ -354,11 +354,13 @@ vn_alloc_handle(struct vn_fsal_obj_handle* parent,
 		hdl->obj_handle.fsid = fs->fsid;
 	}
 	hdl->obj_handle.fileid = inode->i_no;
-#ifdef VFS_NO_MDCACHE
-	hdl->obj_handle.state_hdl = vfs_state_locate(&hdl->obj_handle);
-#endif /* VFS_NO_MDCACHE */
+
 	hdl->obj_handle.obj_ops = &ViveNASM.handle_ops;
 	memcpy(&hdl->inode, inode, sizeof(hdl->inode));
+	if (hdl->obj_handle.type == REGULAR_FILE) {
+		hdl->mh_file.fd.vf = NULL;
+		PTHREAD_RWLOCK_init(&hdl->mh_file.fd.fdlock, NULL);
+	}
 	hdl->refcount = 1;
 	S5LOG_DEBUG("alloc vn_fsal_obj_handle:%p name:%s", hdl, name);
 	return hdl;
@@ -386,8 +388,8 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 		return fsalstat(ERR_FSAL_NOTDIR, 0);
 	}
 
-	vn_inode_no_t i_no =  vn_lookup_inode_no(mfe->mount_ctx, parent->inode.i_no, name, NULL);
-	if (i_no.to_int() > 0) {
+	int64_t i_no =  vn_lookup_inode_no(mfe->mount_ctx, parent->inode.i_no, name, NULL);
+	if (i_no > 0) {
 		/* It already exists */
 		return fsalstat(ERR_FSAL_EXIST, 0);
 	}
@@ -395,7 +397,7 @@ static fsal_status_t vn_create_obj(struct vn_fsal_obj_handle* parent,
 
 	ViveInode inode;
 	i_no = vn_create_file(mfe->mount_ctx, parent->inode.i_no, name, attrs_in->mode, &inode);
-	if (i_no.to_int() < 0) {
+	if (i_no < 0) {
 		LogCrit(COMPONENT_FSAL, "Failed create file:%s", name);
 		return fsalstat(ERR_FSAL_IO, 0);
 	}
@@ -442,8 +444,8 @@ static fsal_status_t vn_lookup(struct fsal_obj_handle* parent,
 		PTHREAD_RWLOCK_rdlock(&parent->obj_lock);
 	
 	ViveInode inode;
-	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, myself->inode.i_no, path, &inode);
-	if (ino.to_int() < 0) {
+	int64_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, myself->inode.i_no, path, &inode);
+	if (ino < 0) {
 		status = fsalstat(ERR_FSAL_NOENT, 0);
 		goto out;
 	}
@@ -560,7 +562,7 @@ static fsal_status_t vn_readdir(struct fsal_obj_handle* dir_hdl,
 	ViveInode* inode;
 	int64_t i = 0;
 	/* Always run in index order */
-	for (inode = vn_next_inode(myself->mfo_exp->mount_ctx, it, &entry_name) ; inode != NULL; i++) {
+	for (inode = vn_next_inode(myself->mfo_exp->mount_ctx, it, entry_name.c_str()) ; inode != NULL; i++) {
 		if (i < read_off)
 			continue;
 		fsal_prepare_attrs(&attrs, attrmask);
@@ -847,8 +849,8 @@ fsal_status_t vn_link(struct fsal_obj_handle* obj_hdl,
 	struct vn_fsal_obj_handle* hdl;
 	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
 
-	vn_inode_no_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, dir->inode.i_no, name, NULL);
-	if (ino.to_int()>0) {
+	int64_t ino = vn_lookup_inode_no(myself->mfo_exp->mount_ctx, dir->inode.i_no, name, NULL);
+	if (ino > 0) {
 		/* It already exists */
 		return fsalstat(ERR_FSAL_EXIST, 0);
 	}
@@ -887,14 +889,31 @@ static fsal_status_t vn_unlink(struct fsal_obj_handle* dir_hdl,
 	
 	if(__sync_sub_and_fetch(&myself->inode.i_links_count, 1) == 0) {
 		LogInfo(COMPONENT_FSAL, "Delete file:%ld_%s", (long)parent_dir->inode.i_no, name);
-		vn_delete(myself->mfo_exp->mount_ctx,  myself->vfile);
+		vn_delete(myself->mfo_exp->mount_ctx, VFILE_FROM_HANDLE(myself));
 	} else {
 		S5LOG_ERROR("BUG: link count not persisted if not 0");
 	}
 	
 	return fsalstat(fsal_error, 0);
 }
+static fsal_status_t vn_close_my_fd(struct vn_fd* my_fd)
+{
+	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
+	struct vn_fsal_export* m_export =
+		container_of(op_ctx->fsal_export, struct vn_fsal_export, m_export);
 
+	if (my_fd->vf != NULL && my_fd->openflags != FSAL_O_CLOSED) {
+		int rc = vn_close_file(m_export->mount_ctx, my_fd->vf);
+
+		if (rc < 0) {
+			status = fsalstat(ERR_FSAL_IO, rc);
+		}
+		my_fd->vf = NULL;
+		my_fd->openflags = FSAL_O_CLOSED;
+	}
+
+	return status;
+}
 /**
  * @brief Close a file's global descriptor
  *
@@ -914,13 +933,11 @@ fsal_status_t vn_close(struct fsal_obj_handle* obj_hdl)
 	 * This can block over an I/O operation.
 	 */
 	PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
-
-	vn_close_file(myself->mfo_exp->mount_ctx, myself->vfile);
-	myself->vfile = NULL;
-
+	fsal_status_t s = vn_close_my_fd(&myself->mh_file.fd);
+		
 	PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 
-	return fsalstat(ERR_FSAL_NO_ERROR, 0);;
+	return s;;
 }
 
 /**
@@ -950,15 +967,612 @@ static fsal_status_t vn_rename(struct fsal_obj_handle* obj_hdl,
 			obj_handle);
 	
 	int rc = vn_rename_file(vn_olddir->mfo_exp->mount_ctx, 
-		vn_inode_no_t(vn_olddir->inode.i_no), old_name, 
-		vn_inode_no_t(vn_newdir->inode.i_no), new_name);
+		vn_olddir->inode.i_no, old_name, 
+		vn_newdir->inode.i_no, new_name);
 
 	
 	return fsalstat(rc == 0 ? ERR_FSAL_NO_ERROR : ERR_FSAL_IO, rc);
 }
+static fsal_status_t vn_open_my_fd(struct vn_fsal_obj_handle* myself,
+	fsal_openflags_t openflags,
+	int posix_flags, struct vn_fd* my_fd, int mode)
+{
+	int rc;
+	struct vn_fsal_export* m_export =
+		container_of(op_ctx->fsal_export, struct vn_fsal_export, m_export);
+	
+
+	
+	assert(my_fd->vf == NULL
+		&& my_fd->openflags == FSAL_O_CLOSED && openflags != 0);
+
+	LogFullDebug(COMPONENT_FSAL,
+		"openflags = %x, posix_flags = %x",
+		openflags, posix_flags);
+	my_fd->vf = vn_open_file_by_inode(m_export->mount_ctx, myself->inode.i_no, posix_flags, mode);
+	
+
+	if (my_fd->vf == NULL) {
+		
+		LogFullDebug(COMPONENT_FSAL,
+			"vn_open_file_by_inode with file %s", myself->name);
+		return fsalstat(ERR_FSAL_IO, 0);
+	}
+
+	my_fd->openflags = FSAL_O_NFS_FLAGS(openflags);
+
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
 
 
 
+
+
+
+#define  mem_fsal_obj_handle vn_fsal_obj_handle
+
+
+
+fsal_status_t mem_open2(struct fsal_obj_handle* obj_hdl,
+	struct state_t* state,
+	fsal_openflags_t openflags,
+	enum fsal_create_mode createmode,
+	const char* name,
+	struct fsal_attrlist* attrs_set,
+	fsal_verifier_t verifier,
+	struct fsal_obj_handle** new_obj,
+	struct fsal_attrlist* attrs_out,
+	bool* caller_perm_check)
+{
+	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0 };
+	//struct fsal_fd* my_fd = NULL;
+	struct vn_fd* my_fd = NULL;
+	struct mem_fsal_obj_handle* myself, * hdl = NULL;
+	bool truncated;
+	bool setattrs = attrs_set != NULL;
+	bool created = false;
+	struct fsal_attrlist verifier_attr;
+
+	if (state != NULL) {
+		//my_fd = (struct fsal_fd*)(state + 1);
+		my_fd = &container_of(state, struct vn_state_fd, state)->fd;
+	}
+	myself = container_of(obj_hdl, struct mem_fsal_obj_handle, obj_handle);
+
+	if (setattrs)
+		LogAttrlist(COMPONENT_FSAL, NIV_FULL_DEBUG,
+			"attrs_set ", attrs_set, false);
+
+	truncated = (openflags & FSAL_O_TRUNC) != 0;
+	LogFullDebug(COMPONENT_FSAL,
+		truncated ? "Truncate" : "No truncate");
+
+	/* Now fixup attrs for verifier if exclusive create */
+	if (createmode >= FSAL_EXCLUSIVE) {
+		if (!setattrs) {
+			/* We need to use verifier_attr */
+			attrs_set = &verifier_attr;
+			memset(&verifier_attr, 0, sizeof(verifier_attr));
+		}
+
+		set_common_verifier(attrs_set, verifier, false);
+	}
+
+	if (name == NULL) {
+		/* This is an open by handle */
+#ifdef USE_LTTNG
+		tracepoint(fsalmem, mem_open, __func__, __LINE__, obj_hdl,
+			myself->m_name, state, truncated, setattrs);
+#endif
+		/* Need a lock to protect the FD */
+		PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
+
+		if (state != NULL) {
+			/* Prepare to take the share reservation, but only if we
+			 * are called with a valid state (if state is NULL the
+			 * caller is a stateless create such as NFS v3 CREATE).
+			 */
+
+			 /* Check share reservation conflicts. */
+			status = check_share_conflict(&myself->mh_file.share,
+				openflags,
+				false);
+
+			if (FSAL_IS_ERROR(status)) {
+				PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+				return status;
+			}
+
+			/* Take the share reservation now by updating the
+			 * counters.
+			 */
+			update_share_counters(&myself->mh_file.share,
+				FSAL_O_CLOSED,
+				openflags);
+		}
+		else {
+			/* We need to use the global fd to continue, and take
+			 * the lock to protect it.
+			 */
+			my_fd = &myself->mh_file.fd;
+		}
+
+		if (openflags & FSAL_O_WRITE)
+			openflags |= FSAL_O_READ;
+		//vn_open_my_fd(my_fd, openflags);
+		vn_open_my_fd(myself, openflags, O_RDWR | O_CREAT, my_fd, 00644);
+		if (truncated)
+			myself->attrs.filesize = myself->attrs.spaceused = 0;
+
+		/* Now check verifier for exclusive, but not for
+		 * FSAL_EXCLUSIVE_9P.
+		 */
+		if (createmode >= FSAL_EXCLUSIVE &&
+			createmode != FSAL_EXCLUSIVE_9P &&
+			!check_verifier_attrlist(&myself->attrs, verifier, false)) {
+			/* Verifier didn't match, return EEXIST */
+			status = fsalstat(posix2fsal_error(EEXIST), EEXIST);
+		}
+
+		if (!FSAL_IS_ERROR(status)) {
+			/* Return success. */
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+			if (attrs_out != NULL)
+				/* Note, myself->attrs is usually protected by a
+				 * the attr_lock in MDCACHE.  It's not in this
+				 * case.  Since MEM is not a production FSAL,
+				 * this is deemed to be okay for the moment.
+				 */
+				fsal_copy_attrs(attrs_out, &myself->attrs,
+					false);
+			return status;
+		}
+
+		(void)vn_close_my_fd(my_fd);
+
+		if (state == NULL) {
+			/* If no state, release the lock taken above and return
+			 * status.
+			 */
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+			return status;
+		}
+
+		/* Can only get here with state not NULL and an error */
+
+		/* On error we need to release our share reservation
+		 * and undo the update of the share counters.
+		 * This can block over an I/O operation.
+		 */
+		update_share_counters(&myself->mh_file.share,
+			openflags,
+			FSAL_O_CLOSED);
+
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+		return status;
+	}
+
+	/* In this path where we are opening by name, we can't check share
+	 * reservation yet since we don't have an object_handle yet. If we
+	 * indeed create the object handle (there is no race with another
+	 * open by name), then there CAN NOT be a share conflict, otherwise
+	 * the share conflict will be resolved when the object handles are
+	 * merged.
+	 */
+
+	//status = mem_int_lookup(myself, name, &hdl);
+
+	ViveFile* f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.i_no, name, O_RDWR|O_CREAT, S_IFREG | 00644);
+	if (f == NULL)
+		return fsalstat(ERR_FSAL_NOENT, 0);
+	hdl = vn_alloc_handle(myself, name, f->inode, myself->mfo_exp);
+	hdl->mh_file.fd.vf = f;
+
+
+
+
+
+
+
+
+	//if (FSAL_IS_ERROR(status)) {
+	//	struct fsal_obj_handle* create;
+
+	//	if (status.major != ERR_FSAL_NOENT) {
+	//		/* Actual error from lookup */
+	//		return status;
+	//	}
+	//	/* Doesn't exist, create it */
+	//	status = mem_create_obj(myself, REGULAR_FILE, name, attrs_set,
+	//		&create, attrs_out);
+	//	if (FSAL_IS_ERROR(status)) {
+	//		return status;
+	//	}
+	//	hdl = container_of(create, struct mem_fsal_obj_handle,
+	//		obj_handle);
+	//	created = true;
+	//}
+#ifdef USE_LTTNG
+	tracepoint(fsalmem, mem_open, __func__, __LINE__, &hdl->obj_handle,
+		hdl->m_name, state, truncated, setattrs);
+#endif
+
+	* caller_perm_check = !created;
+
+	/* If we didn't have a state above, use the global fd. At this point,
+	 * since we just created the global fd, no one else can have a
+	 * reference to it, and thus we can mamnipulate unlocked which is
+	 * handy since we can then call setattr2 which WILL take the lock
+	 * without a double locking deadlock.
+	 */
+	if (my_fd == NULL)
+		my_fd = &hdl->mh_file.fd;
+	my_fd->vf = f;
+	my_fd->openflags = FSAL_O_NFS_FLAGS(openflags);
+
+	if (openflags & FSAL_O_WRITE)
+		openflags |= FSAL_O_READ;
+
+	*new_obj = &hdl->obj_handle;
+	
+
+
+
+
+
+
+	if (!created) {
+		/* Create sets and gets attributes, so only do this if not
+		 * creating */
+		if (setattrs && attrs_set->valid_mask != 0) {
+			//mem_copy_attrs_mask(attrs_set, &hdl->attrs);
+			set_attr_from_inode(attrs_set, my_fd->vf->inode);
+		}
+
+		if (attrs_out != NULL) {
+			status = (*new_obj)->obj_ops->getattrs(*new_obj,
+				attrs_out);
+			if (FSAL_IS_ERROR(status) &&
+				(attrs_out->request_mask & ATTR_RDATTR_ERR) == 0) {
+				/* Get attributes failed and caller expected
+				 * to get the attributes. Otherwise continue
+				 * with attrs_out indicating ATTR_RDATTR_ERR.
+				 */
+				return status;
+			}
+		}
+	}
+
+	if (state != NULL) {
+		/* Prepare to take the share reservation, but only if we are
+		 * called with a valid state (if state is NULL the caller is
+		 * a stateless create such as NFS v3 CREATE).
+		 */
+
+		 /* This can block over an I/O operation. */
+		PTHREAD_RWLOCK_wrlock(&(*new_obj)->obj_lock);
+
+		/* Take the share reservation now by updating the counters. */
+		update_share_counters(&hdl->mh_file.share,
+			FSAL_O_CLOSED,
+			openflags);
+
+		PTHREAD_RWLOCK_unlock(&(*new_obj)->obj_lock);
+	}
+
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
+
+
+
+
+
+
+
+
+/**
+ * @brief Open a file descriptor for read or write and possibly create
+ *
+ * This function opens a file for read or write, possibly creating it.
+ * If the caller is passing a state, it must hold the state_lock
+ * exclusive.
+ *
+ * state can be NULL which indicates a stateless open (such as via the
+ * NFS v3 CREATE operation), in which case the FSAL must assure protection
+ * of any resources. If the file is being created, such protection is
+ * simple since no one else will have access to the object yet, however,
+ * in the case of an exclusive create, the common resources may still need
+ * protection.
+ *
+ * If Name is NULL, obj_hdl is the file itself, otherwise obj_hdl is the
+ * parent directory.
+ *
+ * On an exclusive create, the upper layer may know the object handle
+ * already, so it MAY call with name == NULL. In this case, the caller
+ * expects just to check the verifier.
+ *
+ * On a call with an existing object handle for an UNCHECKED create,
+ * we can set the size to 0.
+ *
+ * At least the mode attribute must be set if createmode is not FSAL_NO_CREATE.
+ * Some FSALs may still have to pass a mode on a create call for exclusive,
+ * and even with FSAL_NO_CREATE, and empty set of attributes MUST be passed.
+ *
+ * If an open by name succeeds and did not result in Ganesha creating a file,
+ * the caller will need to do a subsequent permission check to confirm the
+ * open. This is because the permission attributes were not available
+ * beforehand.
+ *
+ * The caller is expected to invoke fsal_release_attrs to release any
+ * resources held by the set attributes. The FSAL layer MAY have added an
+ * inherited ACL.
+ *
+ * The caller will set the request_mask in attrs_out to indicate the attributes
+ * of interest. ATTR_ACL SHOULD NOT be requested and need not be provided. If
+ * not all the requested attributes can be provided, this method MUST return
+ * an error unless the ATTR_RDATTR_ERR bit was set in the request_mask.
+ *
+ * Since this method may instantiate a new fsal_obj_handle, it will be forced
+ * to fetch at least some attributes in order to even know what the object
+ * type is (as well as it's fileid and fsid). For this reason, the operation
+ * as a whole can be expected to fail if the attributes were not able to be
+ * fetched.
+ *
+ * The attributes will not be returned if this is an open by object as
+ * opposed to an open by name.
+ *
+ * @note If the file was created, @a new_obj has been ref'd
+ *
+ * @param[in] obj_hdl               File to open or parent directory
+ * @param[in,out] state             state_t to use for this operation
+ * @param[in] openflags             Mode for open
+ * @param[in] createmode            Mode for create
+ * @param[in] name                  Name for file if being created or opened
+ * @param[in] attrs_in              Attributes to set on created file
+ * @param[in] verifier              Verifier to use for exclusive create
+ * @param[in,out] new_obj           Newly created object
+ * @param[in,out] attrs_out         Optional attributes for newly created object
+ * @param[in,out] caller_perm_check The caller must do a permission check
+ *
+ * @return FSAL status.
+ */
+fsal_status_t vn_open2(struct fsal_obj_handle* obj_hdl,
+	struct state_t* state,
+	fsal_openflags_t openflags,
+	enum fsal_create_mode createmode,
+	const char* name,
+	struct fsal_attrlist* attrs_set,
+	fsal_verifier_t verifier,
+	struct fsal_obj_handle** new_obj,
+	struct fsal_attrlist* attrs_out,
+	bool* caller_perm_check)
+{
+	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
+	struct vn_fd* my_fd = NULL;
+	//struct ViveFile* my_vfile = NULL;
+	struct vn_fsal_obj_handle* myself;
+	bool truncated;
+	bool setattrs = attrs_set != NULL;
+	bool created = false;
+	struct fsal_attrlist verifier_attr;
+	int posix_flags = 0;
+	int unix_mode = 0;
+
+	if (state != NULL) {
+		S5LOG_WARN("open file with state not NULL");
+		my_fd = &container_of(state, struct vn_state_fd, state)->fd;
+	}
+	myself = container_of(obj_hdl, struct vn_fsal_obj_handle, obj_handle);
+	fsal2posix_openflags(openflags, &posix_flags);
+	if (setattrs)
+		LogAttrlist(COMPONENT_FSAL, NIV_FULL_DEBUG,
+			"attrs_set ", attrs_set, false);
+
+	truncated = (openflags & FSAL_O_TRUNC) != 0;
+	LogFullDebug(COMPONENT_FSAL,
+		truncated ? "Truncate" : "No truncate");
+
+	/* Now fixup attrs for verifier if exclusive create */
+	if (createmode >= FSAL_EXCLUSIVE) {
+		if (!setattrs) {
+			/* We need to use verifier_attr */
+			attrs_set = &verifier_attr;
+			memset(&verifier_attr, 0, sizeof(verifier_attr));
+		}
+
+		set_common_verifier(attrs_set, verifier, false);
+	}
+
+	if (name == NULL) {
+		/* This is an open by handle */
+#ifdef USE_LTTNG
+		tracepoint(fsalmem, mem_open, __func__, __LINE__, obj_hdl,
+			myself->m_name, state, truncated, setattrs);
+#endif
+		/* Need a lock to protect the FD */
+		PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
+
+		if (state != NULL) {
+			/* Prepare to take the share reservation, but only if we
+			 * are called with a valid state (if state is NULL the
+			 * caller is a stateless create such as NFS v3 CREATE).
+			 */
+
+			 /* Check share reservation conflicts. */
+			status = check_share_conflict(&myself->mh_file.share,
+				openflags,
+				false);
+
+			if (FSAL_IS_ERROR(status)) {
+				PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+				return status;
+			}
+
+			/* Take the share reservation now by updating the
+			 * counters.
+			 */
+			update_share_counters(&myself->mh_file.share,
+				FSAL_O_CLOSED,
+				openflags);
+			S5LOG_DEBUG("code branch (name==NULL && state != NULL)");
+		}
+		else {
+			/* We need to use the global fd to continue, and take
+			 * the lock to protect it.
+			 */
+			my_fd = &myself->mh_file.fd;
+			S5LOG_DEBUG("code branch (name==NULL && state == NULL)");
+		}
+
+		if (my_fd->openflags != FSAL_O_CLOSED) {
+			vn_close_my_fd(my_fd);
+		}
+		int unix_mode = fsal2unix_mode(attrs_set->mode) &
+			~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
+		status = vn_open_my_fd(myself, openflags, posix_flags,
+			my_fd, unix_mode);
+
+
+		if (!FSAL_IS_ERROR(status)) {
+			/* Return success. */
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+			if (attrs_out != NULL)
+				/* Note, myself->attrs is usually protected by a
+				 * the attr_lock in MDCACHE.  It's not in this
+				 * case.  Since MEM is not a production FSAL,
+				 * this is deemed to be okay for the moment.
+				 */
+				fsal_copy_attrs(attrs_out, &myself->attrs,
+					false);
+			return status;
+		}
+
+
+		if (state == NULL) {
+			/* If no state, release the lock taken above and return
+			 * status.
+			 */
+			PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+			return status;
+		}
+
+		/* Can only get here with state not NULL and an error */
+
+		/* On error we need to release our share reservation
+		 * and undo the update of the share counters.
+		 * This can block over an I/O operation.
+		 */
+		update_share_counters(&myself->mh_file.share,
+			openflags,
+			FSAL_O_CLOSED);
+
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+		return status;
+	}
+
+	/* In this path where we are opening by name, we can't check share
+	 * reservation yet since we don't have an object_handle yet. If we
+	 * indeed create the object handle (there is no race with another
+	 * open by name), then there CAN NOT be a share conflict, otherwise
+	 * the share conflict will be resolved when the object handles are
+	 * merged.
+	 */
+
+
+
+
+	if (createmode == FSAL_NO_CREATE) {
+		S5LOG_ERROR("Not implemented yet");
+		return fsalstat(ERR_FSAL_IO, 0);
+	}
+
+
+	
+	/* Now add in O_CREAT and O_EXCL.
+	 * Even with FSAL_UNGUARDED we try exclusive create first so
+	 * we can safely set attributes.
+	 */
+	if (createmode != FSAL_NO_CREATE) {
+		/* Now add in O_CREAT and O_EXCL. */
+		posix_flags |= O_CREAT;
+
+		/* And if we are at least FSAL_GUARDED, do an O_EXCL create. */
+		if (createmode >= FSAL_GUARDED)
+			posix_flags |= O_EXCL;
+
+		/* Fetch the mode attribute to use in the openat system call. */
+		unix_mode = fsal2unix_mode(attrs_set->mode) &
+			~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
+
+		/* Don't set the mode if we later set the attributes */
+		FSAL_UNSET_MASK(attrs_set->valid_mask, ATTR_MODE);
+	}
+	if (createmode == FSAL_UNCHECKED && (attrs_set->valid_mask != 0)) {
+		/* If we have FSAL_UNCHECKED and want to set more attributes
+		 * than the mode, we attempt an O_EXCL create first, if that
+		 * succeeds, then we will be allowed to set the additional
+		 * attributes, otherwise, we don't know we created the file
+		 * and this can NOT set the attributes.
+		 */
+		posix_flags |= O_EXCL;
+	}
+	unix_mode |= S_IFREG;
+	ViveFile * f = vn_open_file(myself->mfo_exp->mount_ctx, myself->inode.i_no, name, posix_flags, unix_mode);
+	if (f == NULL)
+		return fsalstat(ERR_FSAL_NOENT, 0);
+	struct vn_fsal_obj_handle* file_hdl = NULL;
+	if(S_ISDIR(f->inode->i_mode))
+	{
+		/* Trying to open2 a directory */
+		status = fsalstat(ERR_FSAL_ISDIR, 0);
+		goto fileerr;
+	}
+	created = (posix_flags & O_EXCL) != 0;
+	*caller_perm_check = false;
+
+	file_hdl = vn_alloc_handle(myself, name, f->inode, myself->mfo_exp);
+	file_hdl->mh_file.fd.vf = f;
+	PTHREAD_RWLOCK_init(&file_hdl->mh_file.fd.fdlock, NULL);
+
+	if (my_fd == NULL)
+		my_fd = &file_hdl->mh_file.fd;
+
+	my_fd->vf = f;
+	my_fd->openflags = FSAL_O_NFS_FLAGS(openflags);
+
+	*new_obj = &file_hdl->obj_handle;
+	if (attrs_out != NULL) {
+		set_attr_from_inode(attrs_out, f->inode);
+	}
+	if (state != NULL) {
+		/* Prepare to take the share reservation, but only if we are
+		 * called with a valid state (if state is NULL the caller is
+		 * a stateless create such as NFS v3 CREATE).
+		 */
+
+		 /* This can block over an I/O operation. */
+		PTHREAD_RWLOCK_wrlock(&(*new_obj)->obj_lock);
+
+		/* Take the share reservation now by updating the counters. */
+		update_share_counters(&file_hdl->mh_file.share, FSAL_O_CLOSED, openflags);
+
+		PTHREAD_RWLOCK_unlock(&(*new_obj)->obj_lock);
+	}
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+fileerr:
+
+	/* Close the file we just opened. */
+	(void)vn_close_my_fd(my_fd);
+
+	/* Release the handle we just allocated. */
+	(*new_obj)->obj_ops->release(*new_obj);
+	*new_obj = NULL;
+
+	return status;
+}
+
+
+#if 0
 /**
  * @brief Open a file descriptor for read or write and possibly create
  *
@@ -1108,7 +1722,7 @@ done:
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
-
+#endif
 
 /**
  * @brief Read data from a file
@@ -1148,7 +1762,7 @@ void vn_read2(struct fsal_obj_handle* obj_hdl,
 		return;
 	}
 
-	size_t nb_read = vn_readv(vn_export->mount_ctx, myself->vfile, read_arg->iov, read_arg->iov_count, read_arg->offset);
+	size_t nb_read = vn_readv(vn_export->mount_ctx, VFILE_FROM_HANDLE(myself), read_arg->iov, read_arg->iov_count, read_arg->offset);
 
 	if (read_arg->offset == -1 || nb_read == -1) {
 		int retval = errno;
@@ -1213,7 +1827,7 @@ void vn_write2(struct fsal_obj_handle* obj_hdl,
 	
 
 
-	nb_written = vn_writev(myself->mfo_exp->mount_ctx, myself->vfile, write_arg->iov, write_arg->iov_count,
+	nb_written = vn_writev(myself->mfo_exp->mount_ctx, VFILE_FROM_HANDLE(myself), write_arg->iov, write_arg->iov_count,
 		write_arg->offset);
 
 	if (nb_written == -1) {
@@ -1225,7 +1839,7 @@ void vn_write2(struct fsal_obj_handle* obj_hdl,
 	write_arg->io_amount = nb_written;
 
 	if (write_arg->fsal_stable) {
-		retval = vn_fsync(myself->mfo_exp->mount_ctx, myself->vfile);
+		retval = vn_fsync(myself->mfo_exp->mount_ctx, VFILE_FROM_HANDLE(myself));
 		if (retval == -1) {
 			retval = errno;
 			status = fsalstat(posix2fsal_error(retval), retval);
@@ -1289,15 +1903,9 @@ fsal_status_t vn_close2(struct fsal_obj_handle* obj_hdl,
 		myself->m_name, state);
 #endif
 
-
-	int rc = vn_close_file(myself->mfo_exp->mount_ctx, myself->vfile);
-	if(rc != 0 ){
-		return fsalstat(ERR_FSAL_IO, -rc);
-	}
-	myself->vfile = NULL;
-
-
-	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+	fsal_status_t s = vn_close_my_fd(&myself->mh_file.fd);
+	
+	return s;
 }
 
 /**
@@ -1454,8 +2062,9 @@ static fsal_status_t vn_merge(struct fsal_obj_handle* old_hdl,
 			obj_handle);
 
 		/* This can block over an I/O operation. */
-		S5LOG_WARN("Merge share :%p and %p", &old->share, &newh->share);
-		status = merge_share(&old->share, &newh->share);
+		S5LOG_WARN("Merge share :%p and %p", &old->mh_file.share, &newh->mh_file.share);
+		status = merge_share(old_hdl, &old->mh_file.share,
+			&newh->mh_file.share);
 	}
 
 	return status;
@@ -1481,7 +2090,8 @@ void vn_handle_ops_init(struct fsal_obj_ops* ops)
 	ops->rename = vn_rename;
 	ops->unlink = vn_unlink;
 	ops->close = vn_close;
-	ops->open2 = vn_open2;
+	ops->open2 = mem_open2;
+	//ops->open2 = vn_open2;
 	//ops->reopen2 = vn_reopen2;
 	ops->read2 = vn_read2;
 	ops->write2 = vn_write2;

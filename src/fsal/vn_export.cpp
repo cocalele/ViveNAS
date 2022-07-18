@@ -115,13 +115,17 @@ static struct state_t* vn_alloc_state(struct fsal_export* exp_hdl,
 	struct state_t* related_state)
 {
 	struct state_t* state;
-
-	state = init_state((state_t * )gsh_calloc(1, sizeof(struct state_t)
-		+ sizeof(struct fsal_fd)),
+	struct vn_fd* my_fd;
+	struct vn_state_fd* fdstat = (struct vn_state_fd* )gsh_calloc(1, sizeof(struct vn_state_fd));
+	state = init_state(&fdstat->state,
 		exp_hdl, state_type, related_state);
-#ifdef USE_LTTNG
-	tracepoint(fsalmem, vn_alloc_state, __func__, __LINE__, state);
-#endif
+
+	my_fd = &container_of(state, struct vn_state_fd, state)->fd;
+
+	my_fd->vf = NULL;
+	my_fd->openflags = FSAL_O_CLOSED;
+	PTHREAD_RWLOCK_init(&my_fd->fdlock, NULL);
+
 	return state;
 }
 

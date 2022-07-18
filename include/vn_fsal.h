@@ -1,6 +1,8 @@
 #ifndef vn_fsal_h__
 #define vn_fsal_h__
 #include "vivenas.h"
+#include "vivenas_internal.h"
+
 extern "C" {
 #include "fsal.h"
 #include "fsal_types.h"
@@ -40,6 +42,16 @@ fsal_status_t vn_create_handle(struct fsal_export* exp_hdl,
 
 #define V4_FH_OPAQUE_SIZE 58 /* Size of state_obj digest */
 
+struct vn_fd {
+	fsal_openflags_t openflags;
+	pthread_rwlock_t fdlock;
+	ViveFile* vf;
+};
+struct vn_state_fd
+{
+	struct state_t state;
+	struct vn_fd fd;
+};
 struct vn_fsal_obj_handle {
 	struct fsal_obj_handle obj_handle;
 	struct fsal_attrlist attrs;
@@ -51,13 +63,13 @@ struct vn_fsal_obj_handle {
 			int link_size;
 		} symlink;
 		struct {
-			ViveFile* vfile;
-			//struct fsal_share share;//used by vn_merge
-
-		};
+			//ViveFile* vfile;
+			struct vn_fd fd;
+			struct fsal_share share;//used by vn_merge
+		}mh_file;
 	} ;
 
-	struct fsal_share share; 
+	
 
 //	struct glist_head dirents; /**< List of dirents pointing to obj */
 	struct glist_head mfo_exp_entry; /**< Link into mfs_objs */
