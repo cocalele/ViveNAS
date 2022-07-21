@@ -181,3 +181,9 @@ ViveFsContext::~ViveFsContext()
 
     delete db;
 }
+
+
+extern "C" void vn_say_hello(const char* s)
+{
+    S5LOG_INFO("Message is:%s", s);
+}

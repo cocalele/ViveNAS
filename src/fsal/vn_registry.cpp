@@ -112,7 +112,6 @@ static fsal_status_t init_config(struct fsal_module* module_in,
 	display_fsinfo(&myself->fsal);
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
-void 	__PfAof_init();
 
 MODULE_INIT void vivenas_init(void)
 {

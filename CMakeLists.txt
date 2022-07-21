@@ -39,10 +39,10 @@ set (VIVE_SRC
 	src/main.cpp
     src/file.cpp
     src/data_merge.cpp
-    src/fsal/vn_registry.cpp 
-    src/fsal/vn_handle.cpp
-    src/fsal/vn_export.cpp
-    src/fsal/vn_up.cpp
+ #   src/fsal/vn_registry.cpp 
+ #   src/fsal/vn_handle.cpp
+ #   src/fsal/vn_export.cpp
+ #   src/fsal/vn_up.cpp
  )
  set (MKFS_SRC 
 	src/pfaof.cpp

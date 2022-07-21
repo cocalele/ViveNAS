@@ -499,4 +499,4 @@ FactoryFunc<FileSystem> pfaof_reg =
 //}
 
 }  // end namespace ROCKSDB_NAMESPACE
-void __PfAof_init() { printf("Just a mock\n"); }
+extern "C" void __PfAof_init() { printf("Just a mock\n"); }
