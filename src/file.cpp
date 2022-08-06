@@ -50,13 +50,16 @@ static __always_inline Status vn_persist_inode(ViveFsContext* ctx, Transaction* 
 
 
 //caller must ensure target file/dir not exists
-int64_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int16_t mode, ViveInode** inode_out)
+int64_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int16_t mode, int16_t uid, int16_t gid, ViveInode** inode_out)
 {
 	ViveInode *inode = new ViveInode();
 	inode->i_links_count = 1;
 	inode->i_mode = mode;
 	inode->i_no = ctx->generate_inode_no();
 	inode->i_extent_size = VIVEFS_EXTENT_SIZE;
+	inode->i_atime = inode->i_ctime = inode->i_mtime = time(NULL);
+	inode->i_uid = uid;
+	inode->i_gid = gid;
 	char buf[VIVEFS_INODE_SIZE];
 	assert(sizeof(struct ViveInode) <= VIVEFS_INODE_SIZE);
 	memset(buf, 0, sizeof(buf));
@@ -131,22 +134,24 @@ static __always_inline Status vn_persist_inode(ViveFsContext* ctx, Transaction* 
 	return tx->Put(ctx->meta_cf, Slice((char*)&inode->i_no, sizeof(inode->i_no)), Slice((char*)inode, VIVEFS_INODE_SIZE));
 }
 
-struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, int64_t ino_, int32_t flags, int16_t mode)
+struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, struct ViveInode* inode, int32_t flags, int16_t mode)
 {
 	Status s;
-	ViveInode* inode = NULL;
-	PinnableSlice inode_buf;
-	vn_inode_no_t ino(ino_);
-	if(ino.to_int() == VN_ROOT_INO){
-		inode = &ctx->root_inode;
-	} else {
-		s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
-		if (s.IsNotFound()) {
-			S5LOG_ERROR("Internal error, open file ino:%d failed, inode not exists", ino.to_int());
-			return NULL;
-		}
-		inode = (ViveInode*)inode_buf.data();
-	}
+	//ViveInode* inode = NULL;
+	//PinnableSlice inode_buf;
+	//vn_inode_no_t ino(ino_);
+	//if(ino.to_int() == VN_ROOT_INO){
+	//	inode = &ctx->root_inode;
+	//} else {
+	//	s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
+	//	if (s.IsNotFound()) {
+	//		S5LOG_ERROR("Internal error, open file ino:%d failed, inode not exists", ino.to_int());
+	//		return NULL;
+	//	}
+	//	inode = (ViveInode*)inode_buf.data();
+	//}
+
+	vn_inode_no_t ino(inode->i_no);
 
 	if (flags & O_TRUNC) {
 		S5LOG_DEBUG("truncate file ino:%d", ino);
@@ -186,8 +191,8 @@ struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, int64_t ino_, int32_t
 	ViveFile* f = new ViveFile;
 
 	f->i_no = inode->i_no;
-	f->inode = new ViveInode;
-	memcpy(f->inode, inode, sizeof(*inode));
+	f->inode = inode;
+	
 	return f;
 }
 struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int32_t flags, int16_t mode)
@@ -203,7 +208,8 @@ struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const
 		S5LOG_INFO("Open file %s not exists", file_key.data());
 		if(flags & O_CREAT){
 			S5LOG_INFO("Creating file %s, mode:00%o(Octal) ...", file_key.data(), mode);
-			ino = vn_create_file(ctx, parent_inode_no, file_name, mode, NULL);
+			S5LOG_WARN("Creating file %s, with uid 0 and gid 0", file_key.data());
+			ino = vn_create_file(ctx, parent_inode_no, file_name, mode, 0, 0, NULL);
 			if (ino < 0) {
 				return NULL;
 			}
@@ -214,8 +220,17 @@ struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const
 		memcpy(&ino, inode_no_buf.data(), sizeof(ino));
 	}
 	
-	
-	return vn_open_file_by_inode(ctx, ino, flags, mode);
+	s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
+	if (s.IsNotFound()) {
+		S5LOG_ERROR("Internal error, open file ino:%d failed, inode not exists", ino);
+		return NULL;
+	}
+	ViveInode* inode = new ViveInode;
+	S5LOG_WARN("inode allocaed may not released ! it should be released on file close");
+	memcpy(inode, inode_buf.data(), sizeof(*inode));
+
+
+	return vn_open_file_by_inode(ctx, inode, flags, mode);
 }
 
 size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * in_buf, size_t len, off_t offset )
@@ -227,6 +242,7 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 		S5LOG_ERROR("Failed alloc memory");
 		return -ENOMEM;
 	}
+	S5LOG_DEBUG("call vn_write, len:%ld off:%ld", len, offset);
 	DeferCall _1([buf]() {free(buf); });
 	struct pfs_extent_head* head = (struct pfs_extent_head*)buf;
 	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
@@ -277,6 +293,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
 	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
+	S5LOG_DEBUG("call vn_writev, iov_cnt:%ld off:%ld", iov_cnt, offset);
 	void* buf = malloc(file->inode->i_extent_size + PFS_EXTENT_HEAD_SIZE);
 	if (buf == NULL) {
 		S5LOG_ERROR("Failed alloc memory");
@@ -337,6 +354,8 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		buf_offset += segment_len;
 	}
 	if(offset + len > file->inode->i_size){
+		S5LOG_DEBUG("update file size:%ld on inode:%p", file->inode->i_size, &file->inode);
+
 		file->inode->i_size = offset + len;
 		tx->Put(ctx->meta_cf, Slice((const char*)&file->inode->i_no, sizeof(file->inode->i_no)),
 			Slice((const char*)&file->inode, sizeof(file->inode)));
@@ -385,7 +404,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
 	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
-
+	S5LOG_DEBUG("call vn_readv, iov_cnt:%d, off:%d", iov_cnt, offset);
 	if (offset + len > file->inode->i_size)
 		len = file->inode->i_size - offset;
 	int64_t buf_offset = 0;
@@ -410,7 +429,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 		size_t off = 0;
 		size_t data_remain = segment_len;
 		if (segment_data.size() > 0) {
-			assert(segment_len == file->inode->i_extent_size);
+			//assert(segment_len == file->inode->i_extent_size);
 			while (data_remain > 0) {
 				size_t iov_remain = out_iov[iov_idx].iov_len - in_iov_off;
 				size_t to_copy = min(iov_remain, data_remain);
@@ -473,7 +492,7 @@ int vn_delete(ViveFsContext* ctx, struct ViveFile* file)
 	return 0;
 }
 
-int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, ViveInode* inode)
+int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, ViveInode** inode)
 {
 	PinnableSlice inode_buf;
 	PinnableSlice inode_no_buf;
@@ -482,20 +501,25 @@ int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const ch
 	Slice file_key = s1;
 	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
 	if (s.IsNotFound()) {
-		
+		S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, Not found", parent_inode_no, file_name);
+
 		return -1;
 	}
 	
 	if(inode != NULL) {
-		
+		struct ViveInode* pinode = new ViveInode;
+		S5LOG_WARN("inode memory may not released!");
 		s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, inode_no_buf, &inode_buf);
 		if (s.IsNotFound()) {
 			S5LOG_ERROR("Internal error, open file %s failed, inode lost", file_key.data());
 			return  -1;
 		}
-		memcpy(inode, inode_buf.data(), sizeof(*inode));
+		memcpy(pinode, inode_buf.data(), sizeof(*pinode));
+		*inode = pinode;
 	}
-	return vn_inode_no_t (*(int64_t*)inode_no_buf.data()).to_int();
+	int64_t ino = vn_inode_no_t(*(int64_t*)inode_no_buf.data()).to_int();
+	S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, get ino:%ld", parent_inode_no, file_name, ino);
+	return ino;
 }
 
 struct vn_inode_iterator
@@ -513,12 +537,19 @@ struct vn_inode_iterator* vn_begin_iterate_dir(ViveFsContext* ctx, int64_t paren
 	return it;
 }
 
-struct ViveInode* vn_next_inode(ViveFsContext* ctx, struct vn_inode_iterator* it, const char* entry_name)
+struct ViveInode* vn_next_inode(ViveFsContext* ctx, struct vn_inode_iterator* it, char* entry_name, size_t buf_len)
 {
 	ViveInode* inode = NULL;
 	if(it->itor->Valid() && it->itor->key().starts_with(it->prefix)){
+		S5LOG_WARN("ViveInode allocated may not released");
+		Slice v = it->itor->value();
 		inode = (ViveInode * )malloc(sizeof(ViveInode));
-		memcpy(inode, it->itor->value().data(), sizeof(ViveInode));
+		memcpy(inode, v.data(), sizeof(ViveInode));
+		Slice k = it->itor->key();
+		size_t file_name_len = k.size() - it->prefix.length();
+		assert(buf_len > file_name_len);
+		memcpy(entry_name, k.data() + it->prefix.length(), file_name_len);
+		entry_name[file_name_len] = 0;
 		it->itor->Next();
 	}
 	return inode;

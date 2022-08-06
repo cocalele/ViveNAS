@@ -181,7 +181,10 @@ ViveFsContext::~ViveFsContext()
 
     delete db;
 }
-
+struct ViveInode* vn_get_root_inode(struct ViveFsContext* ctx)
+{
+	return &ctx->root_inode;
+}
 
 extern "C" void vn_say_hello(const char* s)
 {
