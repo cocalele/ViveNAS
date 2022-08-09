@@ -60,7 +60,7 @@ string serialize_superblock(const ViveSuperBlock& sb)
 }
 
 ViveFsContext* vn_mount(const char* db_path) {
-   
+    static_assert(sizeof(struct ViveInode) == VIVEFS_INODE_SIZE, "ViveInode size error");
     Options options;
     ConfigOptions config_options;
     ViveFsContext* ctx = new ViveFsContext();

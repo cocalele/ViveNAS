@@ -43,19 +43,20 @@ struct ViveFsContext;
  * members of ViveInode have same means as that in ext4_inode
  */
 struct ViveInode {
-	__le16	i_mode;		/* File mode */ //use file type like __S_IFDIR
-	__le16	i_uid;		/* Low 16 bits of Owner Uid */
+	__le64  i_no; //inode number of this inode
 	__le64	i_size;	/* Size in bytes */
 	__le64	i_atime;	/* Access time */
 	__le64	i_ctime;	/* Inode Change time */
 	__le64	i_mtime;	/* Modification time */
 	__le64	i_dtime;	/* Deletion Time */
+	__le16	i_mode;		/* File mode */ //use file type like __S_IFDIR
+	__le16	i_uid;		/* Low 16 bits of Owner Uid */
 	__le16	i_gid;		/* Low 16 bits of Group Id */
 	__le16	i_links_count;	/* Links count */
 	__le32	i_flags;	/* File flags */
-	__le64  i_no; //inode number of this inode
 	__le32  i_extent_size;
 
+	__le64  _reserve[24];
 };
 
 typedef int64_t inode_no_t;
