@@ -72,6 +72,7 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec out_iov[] , int iov_cnt, off_t offset);
 struct vn_inode_iterator* vn_begin_iterate_dir(struct ViveFsContext* ctx, int64_t parent_inode_no);
 struct ViveInode* vn_next_inode(struct ViveFsContext* ctx, struct vn_inode_iterator* it, char* entry_name, size_t buf_len);
+int /*as bool*/ vn_iterator_has_next(struct vn_inode_iterator* it);
 void vn_release_iterator(struct ViveFsContext* ctx, struct vn_inode_iterator* it);
 int vn_fsync(struct ViveFsContext* ctx, struct ViveFile* file);
 int vn_close_file(struct ViveFsContext* ctx, struct ViveFile* file);

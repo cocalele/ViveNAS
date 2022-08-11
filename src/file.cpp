@@ -555,6 +555,12 @@ struct vn_inode_iterator* vn_begin_iterate_dir(ViveFsContext* ctx, int64_t paren
 	return it;
 }
 
+
+int /*as bool*/ vn_iterator_has_next(struct vn_inode_iterator* it)
+{
+	return it->itor->Valid() && it->itor->key().starts_with(it->prefix);
+}
+
 struct ViveInode* vn_next_inode(ViveFsContext* ctx, struct vn_inode_iterator* it, char* entry_name, size_t buf_len)
 {
 	ViveInode* inode = NULL;
@@ -563,7 +569,7 @@ struct ViveInode* vn_next_inode(ViveFsContext* ctx, struct vn_inode_iterator* it
 		int64_t ino = *(int64_t*)v.data();
 		PinnableSlice inode_buf;
 
-		S5LOG_DEBUG("query inode with db:%p", ctx->db);
+		//S5LOG_DEBUG("query inode with db:%p", ctx->db);
 		Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&ino, sizeof(ino)), &inode_buf);
 		if (s.IsNotFound()) {
 			S5LOG_ERROR("Internal error, inode lost:%ld", ino);
