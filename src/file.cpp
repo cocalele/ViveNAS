@@ -484,28 +484,39 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	return len;
 }
 
-int vn_delete(ViveFsContext* ctx, struct ViveFile* file)
+int vn_unlink(ViveFsContext* ctx, int64_t parent_ino, const char* fname)
 {
-	string s1 = format_string("%ld_%s", file->parent_inode_no, file->file_name.c_str());
-	Slice file_key = s1;
+	S5LOG_DEBUG("To unlink file:%ld_%s ", parent_ino, fname);
+	struct ViveInode* inode;
+	int64_t ino = vn_lookup_inode_no(ctx, parent_ino, fname, &inode);
+	if (ino < 0)
+		return -ENOENT;
+
+	DeferCall _0([inode]() {delete inode; });
 
 	Transaction* tx = ctx->db->BeginTransaction(ctx->meta_opt);
 	DeferCall _1([tx]() {delete tx; });
 	Cleaner _c;
 	_c.push_back([tx]() {tx->Rollback(); });
+	if( --inode->i_links_count == 0){
+		string s1 = format_string("%ld_%s", parent_ino, fname);
+		Slice file_key = s1;
 
-	ViveInode* inode = file->inode;
-	int64_t ext_cnt = (inode->i_size + inode->i_extent_size - 1) / inode->i_extent_size;
-	for (int64_t i = 0; i < ext_cnt; i++) {
-		pfs_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
-		tx->Delete(ctx->default_cf, Slice((const char*)&ext_k, sizeof(ext_k)));
+		int64_t ext_cnt = (inode->i_size + inode->i_extent_size - 1) / inode->i_extent_size;
+		for (int64_t i = 0; i < ext_cnt; i++) {
+			pfs_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
+			tx->Delete(ctx->default_cf, Slice((const char*)&ext_k, sizeof(ext_k)));
+		}
+		tx->Delete(ctx->meta_cf, file_key);
+	} else {
+		vn_persist_inode(ctx, tx, inode);
 	}
-	tx->Delete(ctx->meta_cf, file_key);
 	Status s = tx->Commit();
 	if (!s.ok()) {
-		S5LOG_ERROR("Failed delete file:%s on committing, for:%s", file_key.data(), s.ToString().c_str());
+		S5LOG_ERROR("Failed unlink file:%ld_%s on committing, for:%s", parent_ino, fname, s.ToString().c_str());
 		return -EIO;
 	}
+
 	_c.cancel_all();
 	return 0;
 }

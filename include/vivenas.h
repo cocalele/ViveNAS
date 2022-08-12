@@ -76,7 +76,7 @@ int /*as bool*/ vn_iterator_has_next(struct vn_inode_iterator* it);
 void vn_release_iterator(struct ViveFsContext* ctx, struct vn_inode_iterator* it);
 int vn_fsync(struct ViveFsContext* ctx, struct ViveFile* file);
 int vn_close_file(struct ViveFsContext* ctx, struct ViveFile* file);
-int vn_delete(struct ViveFsContext* ctx, struct ViveFile* file);
+int vn_unlink(struct ViveFsContext* ctx, int64_t parent_ino, const char* fname);
 int vn_rename_file(struct ViveFsContext* ctx, inode_no_t old_dir_ino, const char* old_name, inode_no_t new_dir_ino, const char* new_name);
 struct ViveFsContext* vn_mount(const char* db_path);
 void vn_free_inode(struct ViveInode* inode);
