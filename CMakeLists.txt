@@ -12,14 +12,50 @@ set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(THIRDPARTY ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty)
-set(GANESHA_SRC ../nfs-ganesha)
+set(GANESHA_SRC ./nfs-ganesha)
 
 set (CMAKE_CXX_STANDARD 17)
-execute_process(COMMAND make -j 4
-                WORKING_DIRECTORY ./rocksdb)
-#execute_process(COMMAND git submodule update --init
-#                WORKING_DIRECTORY ./PureFlash)
-#add_subdirectory(./PureFlash)
+
+execute_process(COMMAND git submodule update --init
+                WORKING_DIRECTORY .)
+				
+#compile PureFlash
+execute_process(COMMAND git submodule update --init
+				COMMAND mkdir build
+                WORKING_DIRECTORY ./PureFlash
+				) #COMMAND_ERROR_IS_FATAL  ANY not supported 
+execute_process(COMMAND ant compile_jute
+                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper
+				)
+execute_process(COMMAND autoreconf -if
+				COMMAND ./configure --enable-debug --without-cppunit
+				COMMAND make -j4
+                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c
+				)
+execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+				COMMAND mkdir build
+                WORKING_DIRECTORY ./PureFlash/build
+				)
+
+#compile rocksdb
+execute_process(COMMAND git submodule update --init
+				COMMAND mkdir build
+                WORKING_DIRECTORY ./rocksdb
+				)
+
+
+execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+				COMMAND ninja
+                WORKING_DIRECTORY ./rocksdb/build
+				)
+
+execute_process(COMMAND git submodule update --init
+                WORKING_DIRECTORY ./nfs-ganesha
+				)				
+
+set(USE_GSS OFF CACHE BOOL "disable GSS" FORCE)
+option(USE_GSS OFF)
+add_subdirectory(nfs-ganesha/src)
 
 
 add_compile_options (-fdiagnostics-color=always)
@@ -53,7 +89,7 @@ set (VIVE_SRC
 )
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 
-link_directories(./PureFlash/build_deb/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
+link_directories(./PureFlash/build/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
 
 add_library(fsalvivenas  SHARED ${VIVE_SRC} ${INCS})
 add_executable(mkfs.vn  ${MKFS_SRC} ${HTTP_SRC} ${INCS})

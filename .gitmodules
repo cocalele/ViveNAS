@@ -4,3 +4,7 @@
 [submodule "PureFlash"]
 	path = PureFlash
 	url = https://gitee.com/cocalele/PureFlash.git
+[submodule "nfs-ganesha"]
+	path = nfs-ganesha
+	url = https://gitee.com/cocalele/nfs-ganesha.git
+	branch = vivenas-v4
