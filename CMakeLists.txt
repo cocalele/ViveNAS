@@ -18,41 +18,43 @@ set(GANESHA_SRC ./nfs-ganesha)
 set (CMAKE_CXX_STANDARD 17)
 
 execute_process(COMMAND git submodule update --init
-                WORKING_DIRECTORY .)
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 				
 #compile PureFlash
 execute_process(COMMAND git submodule update --init
 				COMMAND mkdir build
-                WORKING_DIRECTORY ./PureFlash
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash
 				) #COMMAND_ERROR_IS_FATAL  ANY not supported 
 #execute_process(COMMAND ant compile_jute
-#                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper
+#                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/thirdParty/zookeeper
 #				)
 #execute_process(COMMAND autoreconf -if
 #				COMMAND ./configure --enable-debug --without-cppunit
 #				COMMAND make -j4
-#                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c
+#                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c
 #				)
 #execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
-#                WORKING_DIRECTORY ./PureFlash/build
+#                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/build
 #				)
 
 #compile rocksdb
 execute_process(COMMAND git submodule update --init
 				COMMAND mkdir build
-                WORKING_DIRECTORY ./rocksdb
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb
 				)
 
 
 #execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 #				COMMAND ninja
-#                WORKING_DIRECTORY ./rocksdb/build
+#                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/build
 #				)
 
 execute_process(COMMAND git submodule update --init
-                WORKING_DIRECTORY ./nfs-ganesha
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/nfs-ganesha
 				)				
-
+execute_process(COMMAND  sed -i s/CMAKE_SOURCE_DIR/CMAKE_CURRENT_SOURCE_DIR/g CMakeLists.txt
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/nfs-ganesha/src/libntirpc
+				)		
 set(USE_GSS OFF CACHE BOOL "disable GSS" FORCE)
 option(USE_GSS OFF)
 set(VIVENAS_HOME ${CMAKE_CURRENT_SOURCE_DIR})
