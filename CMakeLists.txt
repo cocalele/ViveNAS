@@ -6,7 +6,8 @@ endif()
 
 project(ViveNAS)
 
-
+execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/osname.sh   OUTPUT_VARIABLE  OS_NAME)
+message("os is ${OS_NAME}")
 set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/bin)
 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
@@ -24,18 +25,17 @@ execute_process(COMMAND git submodule update --init
 				COMMAND mkdir build
                 WORKING_DIRECTORY ./PureFlash
 				) #COMMAND_ERROR_IS_FATAL  ANY not supported 
-execute_process(COMMAND ant compile_jute
-                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper
-				)
-execute_process(COMMAND autoreconf -if
-				COMMAND ./configure --enable-debug --without-cppunit
-				COMMAND make -j4
-                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c
-				)
-execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
-				COMMAND mkdir build
-                WORKING_DIRECTORY ./PureFlash/build
-				)
+#execute_process(COMMAND ant compile_jute
+#                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper
+#				)
+#execute_process(COMMAND autoreconf -if
+#				COMMAND ./configure --enable-debug --without-cppunit
+#				COMMAND make -j4
+#                WORKING_DIRECTORY ./PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c
+#				)
+#execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+#                WORKING_DIRECTORY ./PureFlash/build
+#				)
 
 #compile rocksdb
 execute_process(COMMAND git submodule update --init
@@ -44,10 +44,10 @@ execute_process(COMMAND git submodule update --init
 				)
 
 
-execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
-				COMMAND ninja
-                WORKING_DIRECTORY ./rocksdb/build
-				)
+#execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+#				COMMAND ninja
+#                WORKING_DIRECTORY ./rocksdb/build
+#				)
 
 execute_process(COMMAND git submodule update --init
                 WORKING_DIRECTORY ./nfs-ganesha
@@ -55,6 +55,8 @@ execute_process(COMMAND git submodule update --init
 
 set(USE_GSS OFF CACHE BOOL "disable GSS" FORCE)
 option(USE_GSS OFF)
+set(VIVENAS_HOME ${CMAKE_CURRENT_SOURCE_DIR})
+set(FSAL_DESTINATION ${CMAKE_BINARY_DIR})
 add_subdirectory(nfs-ganesha/src)
 
 
@@ -89,12 +91,13 @@ set (VIVE_SRC
 )
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 
-link_directories(./PureFlash/build/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
+#link_directories(./PureFlash/build/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
+link_directories( ./pre_build_libs/${OS_NAME})
 
-add_library(fsalvivenas  SHARED ${VIVE_SRC} ${INCS})
+add_library(vivenas  SHARED ${VIVE_SRC} ${INCS})
 add_executable(mkfs.vn  ${MKFS_SRC} ${HTTP_SRC} ${INCS})
 
-TARGET_LINK_LIBRARIES(fsalvivenas pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
+TARGET_LINK_LIBRARIES(vivenas pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++)
 TARGET_LINK_LIBRARIES(mkfs.vn pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
 #add_custom_target( all COMMAND ROCKSDB_PLUGINS="pfaof" PF_INC=~/v2/PureFlash/common/include PF_LIB=~/v2/PureFlash/build_deb/bin make simple_example
 #                   COMMAND date
