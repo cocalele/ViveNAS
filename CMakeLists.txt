@@ -8,6 +8,7 @@ project(ViveNAS)
 
 execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/osname.sh   OUTPUT_VARIABLE  OS_NAME)
 message("os is ${OS_NAME}")
+set(CMAKE_BUILD_DIR ${CMAKE_BINARY_DIR})
 set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/bin)
 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
@@ -44,7 +45,7 @@ execute_process(COMMAND git submodule update --init
 				)
 
 
-#execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+#execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug -DUSE_RTTI=1
 #				COMMAND ninja
 #                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/build
 #				)
@@ -101,6 +102,12 @@ add_executable(mkfs.vn  ${MKFS_SRC} ${HTTP_SRC} ${INCS})
 
 TARGET_LINK_LIBRARIES(vivenas pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++)
 TARGET_LINK_LIBRARIES(mkfs.vn pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
+add_custom_target(scripts ALL
+	COMMAND cp -rpfu ${CMAKE_CURRENT_SOURCE_DIR}/scripts ${CMAKE_BINARY_DIR}
+	COMMAND cp -rpfu ${CMAKE_CURRENT_SOURCE_DIR}/docker/Dockerfile ${CMAKE_BUILD_DIR}
+	#COMMAND mv -f ${CMAKE_BINARY_DIR}/scripts/env.sh ${CMAKE_BINARY_DIR}/..
+)
+
 #add_custom_target( all COMMAND ROCKSDB_PLUGINS="pfaof" PF_INC=~/v2/PureFlash/common/include PF_LIB=~/v2/PureFlash/build_deb/bin make simple_example
 #                   COMMAND date
 #                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
