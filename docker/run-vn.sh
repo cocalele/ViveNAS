@@ -5,6 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 JAVA_HOME=/usr/lib/jvm/jdk-15/
 export PATH=/opt/pureflash:$JAVA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=/opt/pureflash:$LD_LIBRARY_PATH
 
 echo "Start MariaDB..."
 mysql_install_db --user=mysql --ldata=/var/lib/mysql
@@ -45,6 +46,7 @@ if [ $status -ne 0 ]; then
   echo "Failed to start jconductor: $status"
   exit $status
 fi
+sleep 2
 
 echo "Start PureFlash store..."
 $DIR/pfs -c /etc/pureflash/pfs.conf &> /var/log/pfs.log &
@@ -64,5 +66,8 @@ echo "Disk ready"
 echo "Welcome to PureFlash(https://github.com/cocalele/PureFlash) all-in-one box!"
 cd
 
+echo "Please run following command to 1) format a vivenas FS and 2) start NFS server"
+echo "  # mkfs.vn  /vivenas_a"
+echo "  # ganesha.nfsd -F  -f /etc/ganesha-vivenas.conf -L /dev/stderr"
 bash
 
