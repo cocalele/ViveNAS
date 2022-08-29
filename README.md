@@ -1,13 +1,42 @@
 # ViveNAS
 
 ## What's ViveNAS
-ViveNAS is Network Attached Filesystem, which provide NFS  service currently.
+ViveNAS is Network Attached Filesystem(NAS), which provide NFS  service currently.
 
-Goal of ViveNAS is to provide the following ability:
-  - scalability, just like server SAN architecture, ViveNAS provide unlimited scalability when servers increase
-  - widely media adaption, ViveNAS can run on medias from PMEM, NVMe SSD, SATA/SAS SSD/HDD, ZNS SSD, SMR HDD, and tape system. 
-  - reliability, ViveNAS can provide reliability via replicas and EC technology. 
+Aim of ViveNAS is to provide a NAS storage that has widely media adaption so we can store long term data at very cheap cost.
+ And when the data is accessed occasionally it can be activated quickly and provide a very high performance.
+ 
+Characters of ViveNAS:
+ - Pursue a dynamic balance between performance and cost via combining different storage media
+ - Solve the problems of long term data store, support media like tape, SMR HDD and EC algorithm
+ - Get ready for CXL memory pooling and SCM technology, whenever they are ready ViveNAS can leverage them to provide outstanding performance
+ - Solve the problem of small file storage
+ - Provide a controlled distribution policy for enterprise storage. So it can solve problems like scaling, balancing, recovering, etc.
+ - A green storage, that can make a full utilize to resource like RAM, CPU which are over-provisioned in modern datacenter.
 
+
+ViveNAS dependents on two core technology to provide above ability:
+__Core tech 1__，the PureFlash Server SAN system
+
+   PureFlash provide all features that are related with distribution system, include HA, fault tolerance, snapshot, clone. 
+
+   PureFlahs is a distributed ServerSAN storage system with it's design philosophy from fully FPGA implemented all-flash system.  So PureFlash has a very simple IO stack.
+   
+   Differ to other distributed storage system which based on hash algorithm, distribution of data in PureFlash is totally controllable. This provide the stability for enterprise storage, for the "human being" rather than a "machine" have the final decision.  (Refer github.com/cocalele/PureFlash for more)
+
+   PureFlash support to manage different media in one cluster, include NVMe SSD, HDD, tape and support access as AOF file.
+
+   All the above features give a solid support to ViveNAS.
+
+__Core tech 2__，SLM tree based VIVEFS
+
+   ViveFS is a userspace filesystem based on LSM tree. LSM tree have two major characters: store in multiple levels; sequential write only in each level.
+   
+   ViveFS put level 0 into DRAM or CXL memory pool, while the other levels will be put into different medias provided by PureFlash. All level data are highly available.
+
+
+   The second benefit of LSM tree, i.e. sequential write, make it very suitable for SMR HDD and tape. So ViveNAS can put cold data into cheap media for long term store.
+   This is one of major aim of ViveNAS. Also sequential write is very friendly to EC algorithm, with which can make cost lower.
   
 ## architecture
     +-------------------+
@@ -37,9 +66,26 @@ Goal of ViveNAS is to provide the following ability:
 
 
 # Build and run
-## setup the build environment
-  0) follow the guides in PureFlash/build_and_run.txt to setup a compile environment or PureFlash
-  1) For ubuntu, run following command:
+## setup build environment from scratch
+  0) follow the guides in PureFlash/build_and_run.txt to setup a compile environment for PureFlash
+  1) For ubuntu, run following command to install additional dependency:
 ```
- apt install liburcu-dev  bison flex libgflags-dev  libblkid-dev
+  # apt install liburcu-dev  bison flex libgflags-dev  libblkid-dev
+```
+  To simplify the compiling process, some thirdparty libraryies are prebuild into binary. For now only ubuntu20.04 is supported.
+
+## use the container for build
+   It may be a bit complicate to setup build environment from scratch since ViveNAS/PureFlash use many third party libraries. I strongly suggest you to use the container for build
+   ```
+   # docker pull pureflash/vivenas-dev:1.9
+   ```
+   All the dependencies and build tools have already deployed in this container.
+  2） clone code
+```
+  # git clone https://github.com/cocalele/ViveNAS.git
+```
+  3) build
+```
+  # mkdir build; cd build
+  # cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
