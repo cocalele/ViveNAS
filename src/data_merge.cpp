@@ -80,3 +80,16 @@ bool ViveDataMergeOperator::PartialMerge(const Slice& key,
 	new_ext_head->merge_off = (int16_t)ext_begin;
 	return true;
 }
+
+
+bool ViveDataMergeOperator::PartialMergeMulti(const Slice& key,
+	const std::deque<Slice>& operand_list,
+	std::string* new_value,
+	Logger* logger) const {
+	if(operand_list.size() == 1){
+		*new_value = operand_list[0].data();
+		return true;
+	}
+	return MergeOperator::PartialMergeMulti(key, operand_list, new_value, logger);
+
+}

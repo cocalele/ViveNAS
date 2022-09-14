@@ -19,6 +19,10 @@ public:
 		const Slice& right_operand,
 		std::string* new_value,
 		Logger* logger) const override;
+	virtual bool PartialMergeMulti(const Slice& key,
+		const std::deque<Slice>& operand_list,
+		std::string* new_value,
+		Logger* logger) const;
 	virtual bool AllowSingleOperand() const { return true; }
 	virtual const char* Name() const override {
 		return "ViveDataMergeOperator";
