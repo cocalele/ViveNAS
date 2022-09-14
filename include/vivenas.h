@@ -79,10 +79,11 @@ int vn_close_file(struct ViveFsContext* ctx, struct ViveFile* file);
 int vn_unlink(struct ViveFsContext* ctx, int64_t parent_ino, const char* fname);
 int vn_rename_file(struct ViveFsContext* ctx, inode_no_t old_dir_ino, const char* old_name, inode_no_t new_dir_ino, const char* new_name);
 struct ViveFsContext* vn_mount(const char* db_path);
+int vn_umount(struct ViveFsContext* ctx);
 void vn_free_inode(struct ViveInode* inode);
 inode_no_t vn_ino_of_file(struct ViveFile* f);
 struct ViveInode* vn_get_root_inode(struct ViveFsContext* ctx);
-void vn_say_hello(const char* s);//a function for debug
+int vn_flush_fs(struct ViveFsContext* ctx);
 
 void 	__PfAof_init();
 
