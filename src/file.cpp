@@ -361,10 +361,13 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		Slice segment_data((const char*)buf, segment_len + PFS_EXTENT_HEAD_SIZE);
 		if (segment_len != file->inode->i_extent_size) {
 			head->merge_off = (int16_t)start_off;
+			S5LOG_DEBUG("Merge data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Merge(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
+			//s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		else {
 			head->data_bmp = PFS_FULL_EXTENT_BMP;
+			S5LOG_DEBUG("Put data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		if (!s.ok()) {
@@ -403,7 +406,7 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 		//TODO: Is it better to use MultiGet or Iterator? 
 		s = ctx->db->Get(ctx->read_opt, ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), &segment_data);
 		if (!s.ok()) {
-			S5LOG_ERROR("Failed write on key:%ld_%ld len:%ld, for:%s", ext_key.inode_no, ext_key.extent_index, segment_len, s.ToString().c_str());
+			S5LOG_ERROR("Failed read on key:%s len:%ld, for:%s", ext_key.to_string(), segment_len, s.ToString().c_str());
 		}
 		if (segment_data.size() > 0)
 			memcpy(out_buf + buf_offset, segment_data.data() + PFS_EXTENT_HEAD_SIZE, segment_len);
@@ -441,7 +444,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 		//TODO: Is it better to use MultiGet or Iterator? 
 		s = ctx->db->Get(ctx->read_opt, ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), &segment_data);
 		if (!s.ok()) {
-			S5LOG_ERROR("Failed write on key:%ld_%ld len:%ld, for:%s", ext_key.inode_no, ext_key.extent_index, segment_len, s.ToString().c_str());
+			S5LOG_ERROR("Failed read on key:%s len:%ld, for:%s", ext_key.to_string(), segment_len, s.ToString().c_str());
 		}
 
 		size_t off = 0;
@@ -644,4 +647,11 @@ int vn_rename_file(ViveFsContext* ctx, int64_t old_dir_ino, const char* old_name
 inode_no_t vn_ino_of_file(struct ViveFile* f)
 {
 	return f->i_no;
+}
+
+const char* pfs_extent_key::to_string() const
+{
+	static __thread char str[64];
+	snprintf(str, sizeof(str), "[ino:%lld, index:%lld]",  inode_no, extent_index);
+	return str;
 }

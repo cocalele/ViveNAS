@@ -117,6 +117,9 @@ ViveFsContext* vn_mount(const char* db_path) {
 	ctx->data_cf = handles[2];
 
 	ctx->meta_opt.sync = true;
+
+	//not work, data still lost, it's problem of merge
+	//ctx->data_opt.sync = true; //to test auto flush
   
 	memset(&ctx->root_inode, 0, sizeof(ctx->root_inode));
 	ctx->root_inode.i_no = VN_ROOT_INO;

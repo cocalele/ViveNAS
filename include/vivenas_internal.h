@@ -69,6 +69,7 @@ struct pfs_extent_key {
 		};
 		char keybuf[16];
 	};
+	const char* to_string() const;
 };
 
 #define PFS_FULL_EXTENT_BMP  (uint16_t)0xffff
@@ -79,9 +80,9 @@ struct pfs_extent_head {
 		int16_t data_bmp; //extent当中有效的数据部分。bmp为0的部分在extent数据中并没有被存储
 		int16_t merge_off;  //一次写入操作在extent内部的offset
 	};
-	char pad1[8];
+	char pad1[12];
 }; //total 16 Byte
-
+static_assert(sizeof(struct pfs_extent_head)==16, "sizeof struct pfs_extent_head not expected 16");
 #define PFS_EXTENT_HEAD_SIZE sizeof(struct pfs_extent_head)
 
 /**
