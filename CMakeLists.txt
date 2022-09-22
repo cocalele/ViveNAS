@@ -109,6 +109,7 @@ add_custom_target(scripts ALL
 	COMMAND cp -rpfu ${CMAKE_CURRENT_SOURCE_DIR}/pre_build_libs/${OS_NAME}/librocksdb.so* ${CMAKE_BINARY_DIR}
 	COMMAND chmod +x ${CMAKE_BUILD_DIR}/docker/*.sh
 	COMMAND cp -rp ${CMAKE_CURRENT_SOURCE_DIR}/ganesha-vivenas.conf ${CMAKE_BUILD_DIR}
+	COMMAND cp -rp ${CMAKE_CURRENT_SOURCE_DIR}/testing ${CMAKE_BUILD_DIR}
 	#COMMAND mv -f ${CMAKE_BINARY_DIR}/scripts/env.sh ${CMAKE_BINARY_DIR}/..
 )
 
