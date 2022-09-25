@@ -111,21 +111,7 @@ int64_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* 
 		S5LOG_ERROR("Failed create file:%s on committing, for:%s", file_key.data(), s.ToString().c_str());
 		return -EIO;
 	}
-#if 0 //debug
-	do {
-		PinnableSlice inode_buf;
-		S5LOG_DEBUG("After persist inode, immediately query inode with db:%p", ctx->db);
-		Status s2 = ctx->db->Get(ctx->read_opt, ctx->meta_cf, Slice((char*)&inode->i_no, sizeof(inode->i_no)), &inode_buf);
-		if (s2.IsNotFound()) {
-			S5LOG_ERROR("Internal error, inode lost:%ld", ino);
 
-		}
-		ViveInode* inode2 = vn_alloc_inode();
-
-		memcpy(inode2, inode_buf.data(), sizeof(*inode2));
-		assert(inode2->i_no == ino);
-	} while (0);
-#endif
 	_c.cancel_all();
 	S5LOG_INFO("Create file:%ld_%s, new ino:%ld, mode:00%o (octal)", parent_inode_no, file_name, ino, inode->i_mode);
 	if (inode_out != NULL)
@@ -210,7 +196,8 @@ struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, struct ViveInode* ino
 
 	f->i_no = inode->i_no;
 	f->inode = inode;
-	
+	if(flags & O_NOATIME)
+		f->noatime=1;
 	return f;
 }
 struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* file_name, int32_t flags, int16_t mode)
@@ -294,11 +281,18 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 		}
 		buf_offset += segment_len;
 	}
+	
+	file->inode->i_mtime = time(NULL);
+	file->dirty = 1;
+	
 	if (offset + len > file->inode->i_size) {
 		file->inode->i_size = offset + len;
-		S5LOG_WARN("don't need to persist inode here");
-		vn_persist_inode(ctx, tx, file->inode);
-		
+		Status s = vn_persist_inode(ctx, tx, file->inode);
+		if (!s.ok()) {
+			S5LOG_ERROR("Failed to persist inode, for:%s", s.ToString().c_str());
+			return -EIO;
+		}
+		file->dirty = 0;
 	}
 	tx->Commit();
 	_c.cancel_all();
@@ -361,13 +355,13 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		Slice segment_data((const char*)buf, segment_len + PFS_EXTENT_HEAD_SIZE);
 		if (segment_len != file->inode->i_extent_size) {
 			head->merge_off = (int16_t)start_off;
-			S5LOG_DEBUG("Merge data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
+			//S5LOG_DEBUG("Merge data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Merge(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 			//s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		else {
 			head->data_bmp = PFS_FULL_EXTENT_BMP;
-			S5LOG_DEBUG("Put data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
+			//S5LOG_DEBUG("Put data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		if (!s.ok()) {
@@ -375,11 +369,17 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		}
 		buf_offset += segment_len;
 	}
+	file->inode->i_mtime = time(NULL);
+	file->dirty = 1;
+
 	if(offset + len > file->inode->i_size){
 		file->inode->i_size = offset + len;
-		S5LOG_DEBUG("update file size:%ld on inode:%p", file->inode->i_size, &file->inode);
-		S5LOG_WARN("don't need to persist inode here");
-		vn_persist_inode(ctx, tx, file->inode);
+		Status s = vn_persist_inode(ctx, tx, file->inode);
+		if (!s.ok()) {
+			S5LOG_ERROR("Failed to persist inode, for:%s", s.ToString().c_str());
+			return -EIO;
+		}
+		file->dirty = 0;
 	}
 	tx->Commit();
 	_c.cancel_all();
@@ -415,6 +415,11 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 		buf_offset += segment_len;
 	}
 
+	S5LOG_DEBUG("onread noatime:%d", file->noatime);
+	if(!file->noatime){
+		file->inode->i_atime = time(NULL);
+		file->dirty = 1;
+	}
 	return len;
 }
 size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec out_iov[], int iov_cnt, off_t offset)
@@ -483,6 +488,12 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	
 		buf_offset += segment_len;
 	}
+	S5LOG_DEBUG("onread noatime:%d", file->noatime);
+
+	if (!file->noatime) {
+		file->inode->i_atime = time(NULL);
+		file->dirty = 1;
+	}
 
 	return len;
 }
@@ -512,7 +523,11 @@ int vn_unlink(ViveFsContext* ctx, int64_t parent_ino, const char* fname)
 		}
 		tx->Delete(ctx->meta_cf, file_key);
 	} else {
-		vn_persist_inode(ctx, tx, inode);
+		Status s = vn_persist_inode(ctx, tx, inode);
+		if (!s.ok()) {
+			S5LOG_ERROR("Failed to persist inode, for:%s", s.ToString().c_str());
+			return -EIO;
+		}
 	}
 	Status s = tx->Commit();
 	if (!s.ok()) {
@@ -528,7 +543,7 @@ int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const ch
 {
 	PinnableSlice inode_buf;
 	PinnableSlice inode_no_buf;
-	S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s", parent_inode_no, file_name);
+	//S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s", parent_inode_no, file_name);
 	string s1 = format_string("%ld_%s", parent_inode_no, file_name);
 	Slice file_key = s1;
 	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
@@ -550,7 +565,7 @@ int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const ch
 		*inode = pinode;
 	}
 	int64_t ino = vn_inode_no_t(*(int64_t*)inode_no_buf.data()).to_int();
-	S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, get ino:%ld", parent_inode_no, file_name, ino);
+	//S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, get ino:%ld", parent_inode_no, file_name, ino);
 	return ino;
 }
 
@@ -614,7 +629,7 @@ struct ViveInode* vn_next_inode(ViveFsContext* ctx, struct vn_inode_iterator* it
 		memcpy(entry_name, k.data() + it->prefix.length(), file_name_len);
 		entry_name[file_name_len] = 0;
 
-		S5LOG_DEBUG("iterate entry ino:%ld inode.ino:%ld name:%s", ino, inode->i_no, entry_name);
+		//S5LOG_DEBUG("iterate entry ino:%ld inode.ino:%ld name:%s", ino, inode->i_no, entry_name);
 		it->itor->Next();
 	}
 	return inode;
@@ -627,12 +642,31 @@ void vn_release_iterator(ViveFsContext* ctx, struct vn_inode_iterator* it)
 
 int vn_fsync(ViveFsContext* ctx, struct ViveFile* file)
 {
-	return -ctx->db->FlushWAL(true).code();
+	S5LOG_DEBUG("Sync file:%s", file->file_name.c_str());
+	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
+	DeferCall _2([tx]() {delete tx; });
+	Cleaner _c;
+	_c.push_back([tx]() {tx->Rollback(); });
+	if (file->dirty) {
+		Status s = vn_persist_inode(ctx, tx, file->inode);
+		if(!s.ok()){
+			S5LOG_ERROR("Failed to persist inode, for:%s", s.ToString().c_str());
+			return -EIO;
+		}
+		file->dirty = 0;
+	}
+	tx->Commit();
+	Status s = ctx->db->FlushWAL(true);
+	if(!s.ok()){
+		S5LOG_ERROR("Failed sync for:%s", s.ToString().c_str());
+	}
+	return -s.code();
 }
 
 int vn_close_file(ViveFsContext* ctx, struct ViveFile* file)
 {
-
+	S5LOG_DEBUG("Close file:%s", file->file_name.c_str());
+	vn_fsync(ctx, file);
 	delete file;
 	S5LOG_DEBUG("ViveFile:%p deleted", file);
 	return 0;
@@ -654,4 +688,9 @@ const char* pfs_extent_key::to_string() const
 	static __thread char str[64];
 	snprintf(str, sizeof(str), "[ino:%lld, index:%lld]",  inode_no, extent_index);
 	return str;
+}
+
+ViveFile::ViveFile():inode(NULL),i_no(0), parent_inode_no(0), noatime(0), nomtime(0), dirty(0)
+{
+
 }

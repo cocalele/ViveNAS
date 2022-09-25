@@ -159,8 +159,8 @@ ViveFsContext* vn_mount(const char* db_path) {
 	f->inode = &ctx->root_inode;
 	f->file_name = "/";
 	ctx->root_file.reset(f);
-
-
+	ctx->lazy_time = 1; //use these as default to reduce metadata update
+	ctx->relatime = 1;
 	_c.cancel_all();
 	S5LOG_INFO("Mount ViveFS:%s succeed", db_path);
 	g_fs_ctx = ctx;
@@ -193,7 +193,7 @@ int vn_umount(ViveFsContext* ctx)
 	delete ctx;
 	return 0;
 }
-ViveFsContext::ViveFsContext() : db(NULL),default_cf(NULL),meta_cf(NULL),data_cf(NULL)
+ViveFsContext::ViveFsContext() : db(NULL),default_cf(NULL),meta_cf(NULL),data_cf(NULL), lazy_time(1), relatime(1)
 {
 	meta_opt = WriteOptions();
 	meta_opt.sync = false;

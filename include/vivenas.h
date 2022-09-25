@@ -41,6 +41,16 @@ struct ViveFsContext;
 
 /**
  * members of ViveInode have same means as that in ext4_inode
+ * https://www.gnu.org/software/coreutils/manual/html_node/File-timestamps.html
+ * Standard POSIX files have three timestamps: the access timestamp (atime) of the last read,
+ * the modification timestamp (mtime) of the last write, and the status change timestamp (ctime)
+ * of the last change to the file¡¯s meta-information. Some file systems support a fourth time:
+ * the birth timestamp (birthtime) of when the file was created; by definition, birthtime never changes.
+ * One common example of a ctime change is when the permissions of a file change. 
+ * For efficiency reasons, many systems are lazy about updating atimes: when a program accesses a file,
+ * they may delay updating the file¡¯s atime, or may not update the file¡¯s atime if the file has been
+ * accessed recently, or may not update the atime at all. Similar laziness, though typically not quite
+ * so extreme, applies to mtimes and ctimes.
  */
 struct ViveInode {
 	__le64  i_no; //inode number of this inode

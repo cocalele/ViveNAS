@@ -40,6 +40,11 @@ struct ViveFile {
 	__le64  i_no;
 	std::string file_name;
 	__le64 parent_inode_no;
+	int noatime; //1: if O_NOATIME specified on open. 
+	int nomtime; //1: if O_NOMTIME specified on open
+	int dirty;
+	ViveFile();
+
 };
 
 struct ViveFsContext {
@@ -59,6 +64,9 @@ struct ViveFsContext {
 	std::unique_ptr<ViveFile> root_file;
 
 	int64_t inode_seed;
+	int lazy_time; //1: update time lazy, i.e. option 'lazytime' is specified on mount
+	               //1 by default in ViveNAS
+	int relatime;  //1 if 'relatime' is specified on mount
 	int64_t generate_inode_no();
 };
 struct pfs_extent_key {

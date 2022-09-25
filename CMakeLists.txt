@@ -99,9 +99,12 @@ link_directories( ./pre_build_libs/${OS_NAME})
 
 add_library(vivenas  SHARED ${VIVE_SRC} ${INCS})
 add_executable(mkfs.vn  ${MKFS_SRC} ${HTTP_SRC} ${INCS})
+add_executable(vn_test_helper  src/vn_test_helper.cpp PureFlash/common/src/pf_utils.cpp)
 
 TARGET_LINK_LIBRARIES(vivenas pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++)
 TARGET_LINK_LIBRARIES(mkfs.vn pthread uuid s5common  curl  rocksdb zookeeper_mt rdmacm ibverbs )
+TARGET_LINK_LIBRARIES(vn_test_helper pthread stdc++ )
+
 add_custom_target(scripts ALL
 	COMMAND cp -rpfu ${CMAKE_CURRENT_SOURCE_DIR}/scripts ${CMAKE_BINARY_DIR}
 	COMMAND cp -rpfu ${CMAKE_CURRENT_SOURCE_DIR}/docker/Dockerfile ${CMAKE_BUILD_DIR}
