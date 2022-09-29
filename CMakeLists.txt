@@ -76,21 +76,21 @@ INCLUDE_DIRECTORIES(include  rocksdb rocksdb/include PureFlash/common/include Pu
 #add_subdirectory(FSAL_MEM)
 
 set (VIVE_SRC 
-	src/pfaof.cpp
-	src/main.cpp
-    src/file.cpp
-    src/data_merge.cpp
+	src/vn_pfaof.cpp
+	src/vn_main.cpp
+    src/vn_file.cpp
+    src/vn_data_merge.cpp
  #   src/fsal/vn_registry.cpp 
  #   src/fsal/vn_handle.cpp
  #   src/fsal/vn_export.cpp
  #   src/fsal/vn_up.cpp
  )
  set (MKFS_SRC 
-	src/pfaof.cpp
-    src/mkfs.cpp
-    src/main.cpp
-    src/file.cpp
-    src/data_merge.cpp
+	src/vn_pfaof.cpp
+    src/vn_mkfs.cpp
+    src/vn_main.cpp
+    src/vn_file.cpp
+    src/vn_data_merge.cpp
 )
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 

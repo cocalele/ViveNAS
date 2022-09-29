@@ -14,11 +14,11 @@
 #include "rocksdb/options.h"
 #include "rocksdb/convenience.h"
 #include <rocksdb/utilities/object_registry.h>
-#include "pfaof.h"
-#include "vivenas.h"
-#include "vivenas_internal.h"
+#include "vn_pfaof.h"
+#include "vn_vivenas.h"
+#include "vn_vivenas_internal.h"
 #include "pf_log.h"
-#include "data_merge.h"
+#include "vn_data_merge.h"
 
 #include "../PureFlash/common/include/pf_utils.h"
 #include <gsh_list.h>
