@@ -406,7 +406,7 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 		//TODO: Is it better to use MultiGet or Iterator? 
 		s = ctx->db->Get(ctx->read_opt, ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), &segment_data);
 		if (!s.ok()) {
-			S5LOG_ERROR("Failed read on key:%s len:%ld, for:%s", ext_key.to_string(), segment_len, s.ToString().c_str());
+			S5LOG_ERROR("Failed read on file:%s key:%s len:%ld, for:%s", file->file_name.c_str(), ext_key.to_string(), segment_len, s.ToString().c_str());
 		}
 		if (segment_data.size() > 0)
 			memcpy(out_buf + buf_offset, segment_data.data() + PFS_EXTENT_HEAD_SIZE, segment_len);
@@ -415,7 +415,6 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 		buf_offset += segment_len;
 	}
 
-	S5LOG_DEBUG("onread noatime:%d", file->noatime);
 	if(!file->noatime){
 		file->inode->i_atime = time(NULL);
 		file->dirty = 1;
@@ -642,7 +641,7 @@ void vn_release_iterator(ViveFsContext* ctx, struct vn_inode_iterator* it)
 
 int vn_fsync(ViveFsContext* ctx, struct ViveFile* file)
 {
-	S5LOG_DEBUG("Sync file:%s", file->file_name.c_str());
+	S5LOG_DEBUG("Sync file ino:%ld name:%s", file->i_no, file->file_name.c_str());
 	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
 	DeferCall _2([tx]() {delete tx; });
 	Cleaner _c;
@@ -665,7 +664,7 @@ int vn_fsync(ViveFsContext* ctx, struct ViveFile* file)
 
 int vn_close_file(ViveFsContext* ctx, struct ViveFile* file)
 {
-	S5LOG_DEBUG("Close file:%s", file->file_name.c_str());
+	S5LOG_DEBUG("Close file ino:%ld name:%s", file->i_no, file->file_name.c_str());
 	vn_fsync(ctx, file);
 	delete file;
 	S5LOG_DEBUG("ViveFile:%p deleted", file);
