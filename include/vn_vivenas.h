@@ -94,7 +94,7 @@ void vn_free_inode(struct ViveInode* inode);
 inode_no_t vn_ino_of_file(struct ViveFile* f);
 struct ViveInode* vn_get_root_inode(struct ViveFsContext* ctx);
 int vn_flush_fs(struct ViveFsContext* ctx);
-
+int vn_persist_inode(struct ViveFsContext* ctx,  struct ViveInode* inode);
 void 	__PfAof_init();
 
 #ifdef __cplusplus
