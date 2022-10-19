@@ -2,6 +2,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/utils.sh
 VN_BUILD_DIR=$( cd $DIR/.. && pwd)
+info "Use build dir:$VN_BUILD_DIR"
 
 assert  which mount.nfs
 assert_equal "$(pidof ganesha.nfsd)" ""

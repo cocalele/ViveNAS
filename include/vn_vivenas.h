@@ -66,9 +66,21 @@ struct ViveInode {
 	__le32	i_flags;	/* File flags */
 	__le32  i_extent_size;
 
-	__le64  _reserve[24];
+	__le64  _reserve[23];
+	__le32  _reserve_1;
+	__le32  ref_cnt;
 };
 
+static __always_inline void vn_add_inode_ref(struct ViveInode* n)
+{
+	++n->ref_cnt;
+}
+static __always_inline void vn_dec_inode_ref(struct ViveInode* n)
+{
+	if (--n->ref_cnt == 0) {
+		free(n);
+	}
+}
 typedef int64_t inode_no_t;
 
 inode_no_t vn_lookup_inode_no(struct ViveFsContext* ctx, inode_no_t parent_inode_no, const char* file_name, /*out*/struct  ViveInode** inode);

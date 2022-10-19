@@ -89,3 +89,6 @@ __Core tech 2__，SLM tree based VIVEFS
   # mkdir build; cd build
   # cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
+
+## Performance estimation 
+accord to rocksdb benchmark, https://github.com/facebook/rocksdb/wiki/Performance-Benchmarks

@@ -44,6 +44,7 @@ struct ViveFile {
 	int nomtime; //1: if O_NOMTIME specified on open
 	int dirty;
 	ViveFile();
+	~ViveFile();
 
 };
 
