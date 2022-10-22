@@ -6,6 +6,8 @@ using ROCKSDB_NAMESPACE::MergeOperator;
 using ROCKSDB_NAMESPACE::Slice;
 using ROCKSDB_NAMESPACE::Logger;
 using ROCKSDB_NAMESPACE::AssociativeMergeOperator;
+
+//#define USE_ASSOCIATE_MERGE 1
 #ifdef USE_ASSOCIATE_MERGE 
 class ViveDataMergeOperator : public AssociativeMergeOperator
 {
@@ -59,8 +61,8 @@ public:
 	//	Logger* logger) const;
 	virtual bool FullMergeV2(const MergeOperationInput& merge_in,
 		MergeOperationOutput* merge_out) const override;
-	virtual bool AllowSingleOperand() const  override { return true; }
-	virtual bool ShouldMerge(const std::vector<Slice>& /*operands*/) const override  { return true; }
+	//virtual bool AllowSingleOperand() const  override { return true; }
+	//virtual bool ShouldMerge(const std::vector<Slice>& /*operands*/) const override  { return true; }
 
 
 	virtual const char* Name() const {

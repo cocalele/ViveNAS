@@ -66,34 +66,6 @@ static inline int is_bit_set(int16_t& bmp, int index)
 //	}
 //	return true;
 //}
-bool ViveDataMergeOperator::PartialMerge(const Slice& key,
-	const Slice& left_operand,
-	const Slice& right_operand,
-	std::string* new_value,
-	Logger* logger) const
-{
-	const struct pfs_extent_head* left_ext_head = (const struct pfs_extent_head* )left_operand.data();
-	const char* left_data_buf = ((const char*)left_ext_head) + sizeof(struct pfs_extent_head);
-	const struct pfs_extent_head* right_ext_head = (const struct pfs_extent_head*)right_operand.data();
-	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct pfs_extent_head);
-	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)key.data();
-	S5LOG_DEBUG("PartialMerge extent:%s with left:%d + right:%d bytes", ext_key->to_string(), 
-		left_operand.size() - sizeof(struct pfs_extent_head),
-		right_operand.size() - sizeof(struct pfs_extent_head));
-
-
-	size_t ext_begin = min(left_ext_head->merge_off, right_ext_head->merge_off);
-	size_t ext_end = max(left_ext_head->merge_off + left_operand.size() - sizeof(struct pfs_extent_head),
-		right_ext_head->merge_off + right_operand.size() - sizeof(struct pfs_extent_head));
-
-	new_value->resize(ext_end - ext_begin + sizeof(struct pfs_extent_head));
-	struct pfs_extent_head* new_ext_head = (struct pfs_extent_head* )new_value->data();
-	char* new_data_buf = ((char*)new_ext_head) + sizeof(struct pfs_extent_head);
-	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, left_operand.size() - sizeof(struct pfs_extent_head));
-	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, right_operand.size() - sizeof(struct pfs_extent_head));
-	new_ext_head->merge_off = (int16_t)ext_begin;
-	return true;
-}
 
 
 //bool ViveDataMergeOperator::PartialMergeMulti(const Slice& key,
@@ -144,6 +116,19 @@ static bool _merge(const Slice& key,
 	new_ext_head->merge_off = (int16_t)ext_begin;
 	return true;
 }
+bool ViveDataMergeOperator::PartialMerge(const Slice& key,
+	const Slice& left_operand,
+	const Slice& right_operand,
+	std::string* new_value,
+	Logger* logger) const
+{
+
+	//这个函数实现和AssociativeMergeOperator 不同，导致了bug? 
+	return _merge(key, &left_operand, right_operand, new_value, logger);
+
+}
+
+
 bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
 	MergeOperationOutput* merge_out) const
 {
@@ -170,7 +155,7 @@ bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
 
   // The result will be in *new_value. All merges succeeded.
   return true;
-#endif
+#else
 
 	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)merge_in.key.data();
 	S5LOG_DEBUG("FullMergeV2 extent:%s with %d operand", ext_key->to_string(), merge_in.operand_list.size());
@@ -204,6 +189,7 @@ bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
 	}
 
 	return true;
+#endif
 }
 #else
 bool ViveDataMergeOperator::Merge(const Slice& key,

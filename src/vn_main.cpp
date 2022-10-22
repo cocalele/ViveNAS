@@ -127,6 +127,7 @@ ViveFsContext* vn_mount(const char* db_path) {
 	ctx->root_inode.i_links_count = 2;
 	ctx->root_inode.i_size = 4096;
 	ctx->root_inode.i_atime = ctx->root_inode.i_ctime = time(NULL);
+	ctx->root_inode.ref_cnt = 1;
 
 	string v;
 	s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, INODE_SEED_KEY, &v);
@@ -156,6 +157,7 @@ ViveFsContext* vn_mount(const char* db_path) {
 		return NULL;
 	}
 	f->i_no = VN_ROOT_INO;
+	vn_add_inode_ref(&ctx->root_inode);
 	f->inode = &ctx->root_inode;
 	f->file_name = "/";
 	ctx->root_file.reset(f);
@@ -177,14 +179,14 @@ int vn_umount(ViveFsContext* ctx)
 	cfs.push_back(ctx->default_cf);
 
 	//TODO: the following Get may cause segfault. reason still unknown
-	PinnableSlice v;
-	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, INODE_SEED_KEY, &v);
-	if (!s.ok()) {
-		S5LOG_ERROR("Failed GET key:%s, %s", INODE_SEED_KEY, s.ToString().c_str());
-	}
-	else {
-		fprintf(stderr, "Succeed get key:%s\n", INODE_SEED_KEY);
-	}
+	//PinnableSlice v;
+	//Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, INODE_SEED_KEY, &v);
+	//if (!s.ok()) {
+	//	S5LOG_ERROR("Failed GET key:%s, %s", INODE_SEED_KEY, s.ToString().c_str());
+	//}
+	//else {
+	//	fprintf(stderr, "Succeed get key:%s\n", INODE_SEED_KEY);
+	//}
 	ctx->db->Flush(FlushOptions(), cfs);
 	ctx->db->SyncWAL();
 	CancelAllBackgroundWork(ctx->db, true);

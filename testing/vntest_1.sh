@@ -43,7 +43,7 @@ assert_equal $? 0
 
 info "Now umount and shutdown"
 assert umount $MNT_DIR
-kill -s 2 $NFSD_PID
+kill  $NFSD_PID
 assert wait $NFSD_PID
 
 info "Restart nfsd"
@@ -66,7 +66,7 @@ assert_equal "$str2" "$(cat $MNT_DIR/dd/f2.txt)"
 
 info "Now umount and shutdown"
 assert umount $MNT_DIR
-kill -s 2 $NFSD_PID
+kill  $NFSD_PID
 assert wait $NFSD_PID
 
 info "Test OK"
