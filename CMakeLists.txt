@@ -37,6 +37,9 @@ execute_process(COMMAND git submodule update --init
 #execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 #                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/build
 #				)
+#execute_process(COMMAND ninja
+#                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/build
+#				)
 
 #compile rocksdb
 execute_process(COMMAND git submodule update --init
@@ -61,6 +64,7 @@ option(USE_GSS OFF)
 set(VIVENAS_HOME ${CMAKE_CURRENT_SOURCE_DIR})
 set(FSAL_DESTINATION ${CMAKE_BINARY_DIR})
 add_subdirectory(nfs-ganesha/src)
+#add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/PureFlash)
 
 
 add_compile_options (-fdiagnostics-color=always)

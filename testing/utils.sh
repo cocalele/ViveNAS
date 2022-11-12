@@ -6,6 +6,10 @@ function fatal {
 function info {
     echo -e "\033[32m$* \033[0m"
 }
+function warn {
+    echo -e "\033[33m$* \033[0m"
+}
+
 
 function assert()
 {
@@ -23,7 +27,12 @@ function assert_equal()
         fatal "Assert fail, $1 != $2, $3"
     fi
 }
-
+function assert_eq()
+{
+    if [ "$1" != "$2" ]; then
+        fatal "Assert fail, $1 != $2, $3"
+    fi
+}
 function assert_not_eq()
 {
     if [ "$1" == "$2" ]; then
@@ -46,8 +55,15 @@ function assert_proc()
 	if [[ ! -d /proc/$1 ]]; then
 		fatal "process $1 not exist"
 	fi
-
 }
+
+function check_proc()
+{
+	if [[ ! -d /proc/$1 ]]; then
+		warn "process $1 not exist"
+	fi
+}
+
 
 function curlex () {
     echo "curl $@"

@@ -4,6 +4,9 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/utils.sh
 #set -xv
 
+BUILD_ROOT=$DIR/..
+export PATH=$BUILD_ROOT/bin:$PATH
+
 FIFO_IN=/tmp/test_in
 AOF_SRC_DAT=/tmp/test_src.dat
 AOF_OUT_DAT=/tmp/test_out.dat
@@ -40,9 +43,9 @@ check_proc $HELPER_PID
 
 
 date > $MNT_DIR/A1.txt
-assert_eq "$?" "0"
+assert_equal "$?" "0"
 date >> $MNT_DIR/A1.txt
-assert_eq "$?" "0"
+assert_equal "$?" "0"
 
 echo "q" > $FIFO_IN
 assert wait $HELPER_PID

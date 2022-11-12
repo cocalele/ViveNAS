@@ -27,7 +27,7 @@ ViveNAS follows a lean project management approach by splitting the development 
 
 ## Near Term
 
-Typically the items under this category fall under next major release (after the current. e.g 4.0). At a high level, the focus is towards moving the beta engines towards stable by adding more automated e2e tests and updating the corresponding user and contributor documents. To name a few backlogs (not in any particular order) on the near-term radar, where we are looking for additional help: 
+Typically the items under this category fall under next major release (after the current. e.g 1.0). At a high level, the focus is towards moving the beta engines towards stable by adding more automated e2e tests and updating the corresponding user and contributor documents. To name a few backlogs (not in any particular order) on the near-term radar, where we are looking for additional help: 
 
 ### LsmTree (rocksdb)
  - Support to select media type for different LSM layer, with user defined policy
