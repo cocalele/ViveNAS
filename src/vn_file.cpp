@@ -143,7 +143,7 @@ int update_file_size(ViveFsContext* ctx, Transaction* tx, ViveInode* inode, size
 }
 static __always_inline Status _vn_persist_inode(ViveFsContext* ctx, Transaction* tx, ViveInode* inode)
 {
-	S5LOG_DEBUG("persist inode inode.ino:%ld", inode->i_no);
+	//S5LOG_DEBUG("persist inode inode.ino:%ld", inode->i_no);
 	Status s = tx->Put(ctx->meta_cf, Slice((char*)&inode->i_no, sizeof(inode->i_no)), Slice((char*)inode, VIVEFS_INODE_SIZE));
 
 	return s;
@@ -323,7 +323,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
 	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
-	S5LOG_DEBUG("call vn_writev, iov_cnt:%ld off:%ld", iov_cnt, offset);
+	//S5LOG_DEBUG("call vn_writev, iov_cnt:%ld off:%ld", iov_cnt, offset);
 	void* buf = malloc(file->inode->i_extent_size + PFS_EXTENT_HEAD_SIZE);
 	if (buf == NULL) {
 		S5LOG_ERROR("Failed alloc memory");
@@ -451,7 +451,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
 	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
-	S5LOG_DEBUG("call vn_readv, iov_cnt:%d, off:%d", iov_cnt, offset);
+	//S5LOG_DEBUG("call vn_readv, iov_cnt:%d, off:%d", iov_cnt, offset);
 	if (offset + len > file->inode->i_size)
 		len = file->inode->i_size - offset;
 	int64_t buf_offset = 0;
@@ -569,7 +569,7 @@ int64_t vn_lookup_inode_no(ViveFsContext* ctx, int64_t parent_inode_no, const ch
 	Slice file_key = s1;
 	Status s = ctx->db->Get(ctx->read_opt, ctx->meta_cf, file_key, &inode_no_buf);
 	if (s.IsNotFound()) {
-		S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, Not found", parent_inode_no, file_name);
+		//S5LOG_DEBUG("Lookup on parent ino:%ld file_name:%s, Not found", parent_inode_no, file_name);
 
 		return -1;
 	}
@@ -703,7 +703,7 @@ int vn_rename_file(ViveFsContext* ctx, int64_t old_dir_ino, const char* old_name
 
 int vn_persist_inode(struct ViveFsContext* ctx, struct ViveInode* inode)
 {
-	S5LOG_DEBUG("vn_persist_inode ino:%ld", inode->i_no);
+	//S5LOG_DEBUG("vn_persist_inode ino:%ld", inode->i_no);
 	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
 	DeferCall _2([tx]() {delete tx; });
 	Cleaner _c;

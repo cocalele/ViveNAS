@@ -7,6 +7,8 @@
 #include "logging/logging.h"
 #include "pf_aof.h"
 #include "pf_utils.h"
+#include "pf_client_api.h"
+#include "pf_client_priv.h"
 
 using namespace ROCKSDB_NAMESPACE;
 
@@ -48,7 +50,8 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
   PfAofSeqFile(PfAof* _f, const std::string &fname) : offset(0), aof(_f), file_name(fname)
   {}
   ~PfAofSeqFile() {
-    delete aof;
+    aof->reader_cnt--;
+    aof->dec_ref();
   }
   // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
   // written by this routine.  Sets "*result" to the data that was
@@ -89,6 +92,7 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
     offset += n;
     return IOStatus::OK();
   }
+  //virtual bool use_direct_io() const { return true; }
 };
 
 class PfAofRandomFile : virtual public FSRandomAccessFile {
@@ -100,7 +104,10 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
   PfAofRandomFile(PfAof* _f, const std::string& fname)
       : offset(0), aof(_f), file_name(fname)
   {}
-  ~PfAofRandomFile() { delete aof; }
+  ~PfAofRandomFile() {
+    aof->reader_cnt--;
+    aof->dec_ref(); 
+  }
 
   // Read up to "n" bytes from the file starting at "offset".
   // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
@@ -131,6 +138,7 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
     }
     return s;
   }
+  //virtual bool use_direct_io() const { return true; }
 };
 
 class PfAofWriteableFile :  public FSWritableFile {
@@ -143,7 +151,13 @@ class PfAofWriteableFile :  public FSWritableFile {
     PfAofWriteableFile(PfAof* _f, const std::string& fname)
         : offset(0), aof(_f), file_name(fname)
     {}
-    ~PfAofWriteableFile() { delete aof; }
+    ~PfAofWriteableFile()
+    {
+        if(aof != NULL){ //may has set to NULL on Close
+            aof->writer_cnt--;
+            aof->dec_ref(); 
+        }
+    }
 
     // Append data to the end of the file
     // Note: A WriteableFile object must support either Append or
@@ -168,7 +182,8 @@ class PfAofWriteableFile :  public FSWritableFile {
     {
         (void)options;
         (void)dbg;
-        delete aof;
+		aof->writer_cnt--;
+		aof->dec_ref();
         aof = NULL;
         offset = 0;
         return IOStatus::OK();
@@ -212,14 +227,17 @@ public:
     // The returned file will only be accessed by one thread at a time.
     virtual IOStatus NewSequentialFile(
         const std::string& fname, const FileOptions& file_opts,
-        std::unique_ptr<FSSequentialFile>* result, IODebugContext* dbg) {
-      (void)file_opts;
-      (void)dbg;
-      PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
-                               "/etc/pureflash/pf.conf", S5_LIB_VER);
-      if (aof == NULL) return IOStatus::PathNotFound();
-      *result = std::unique_ptr<FSSequentialFile> (new PfAofSeqFile(aof, fname));
-      return IOStatus::OK();
+        std::unique_ptr<FSSequentialFile>* result, IODebugContext* dbg)
+    {
+        (void)file_opts;
+        (void)dbg;
+        PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
+                                "/etc/pureflash/pf.conf", S5_LIB_VER);
+        if (aof == NULL) return IOStatus::PathNotFound();
+        aof->reader_cnt++;
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        *result = std::unique_ptr<FSSequentialFile> (new PfAofSeqFile(aof, fname));
+        return IOStatus::OK();
     }
 
     // Create a brand new random access read-only file with the
@@ -232,15 +250,17 @@ public:
     virtual IOStatus NewRandomAccessFile(
         const std::string& fname, const FileOptions& file_opts,
         std::unique_ptr<FSRandomAccessFile>* result,
-        IODebugContext* dbg)  {
-      (void)file_opts;
-      (void)dbg;
-      PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
-                               "/etc/pureflash/pf.conf", S5_LIB_VER);
-      if (aof == NULL) return IOStatus::PathNotFound();
-      *result =
-          std::unique_ptr<FSRandomAccessFile> (new PfAofRandomFile(aof, fname));
-      return IOStatus::OK();
+        IODebugContext* dbg)
+    {
+        (void)file_opts;
+        (void)dbg;
+        PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
+                                "/etc/pureflash/pf.conf", S5_LIB_VER);
+        if (aof == NULL) return IOStatus::PathNotFound();
+        aof->reader_cnt++;
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        *result = std::unique_ptr<FSRandomAccessFile> (new PfAofRandomFile(aof, fname));
+        return IOStatus::OK();
     }
 
       // Create an object that writes to a new file with the specified
@@ -253,15 +273,17 @@ public:
     virtual IOStatus NewWritableFile(const std::string& fname,
                                      const FileOptions& file_opts,
                                      std::unique_ptr<FSWritableFile>* result,
-                                     IODebugContext* dbg) {
-      (void)file_opts;
-      (void)dbg;
-      PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
-                               "/etc/pureflash/pf.conf", S5_LIB_VER);
-      if (aof == NULL) return IOStatus::PathNotFound();
-      *result =
-          std::unique_ptr<FSWritableFile> (new PfAofWriteableFile(aof, fname));
-      return IOStatus::OK();
+                                     IODebugContext* dbg)
+    {
+        (void)file_opts;
+        (void)dbg;
+        PfAof* aof = pf_open_aof(fname.c_str(), NULL, O_CREAT | O_RDWR,
+                                "/etc/pureflash/pf.conf", S5_LIB_VER);
+        if (aof == NULL) return IOStatus::PathNotFound();
+        aof->writer_cnt++;
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        *result = std::unique_ptr<FSWritableFile> (new PfAofWriteableFile(aof, fname));
+        return IOStatus::OK();
     }
 
     
@@ -384,10 +406,10 @@ public:
                                  IODebugContext* /*dbg*/) {
 
         PfAof* f = pf_open_aof(fname.c_str(), NULL, O_RDONLY,"/etc/pureflash/pf.conf", S5_LIB_VER);
-      if (f == NULL) return IOStatus::NotFound();
-       *file_size = f->file_length();
-      delete f;
-      return IOStatus::OK();
+        if (f == NULL) return IOStatus::NotFound();
+        *file_size = f->file_length();
+        f->dec_ref();
+        return IOStatus::OK();
     }
 
     // Store the last modification time of fname in *file_mtime.
