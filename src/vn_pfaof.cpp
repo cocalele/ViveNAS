@@ -351,7 +351,7 @@ public:
     // Delete the named file.
     virtual IOStatus DeleteFile(const std::string& fname,
                                 const IOOptions& , IODebugContext* ) {
-      int rc = pf_delete_volume(fname.c_str(), "/etc/pureflash/pf.conf");
+      int rc = pf_delete_aof(fname.c_str(), "/etc/pureflash/pf.conf");
       return rc == 0? IOStatus::OK(): IOStatus::IOError(
           "DeleteFile error");
     }
@@ -424,7 +424,7 @@ public:
     virtual IOStatus RenameFile(const std::string& src,
                                 const std::string& target,
                                 const IOOptions& /*options*/, IODebugContext* /*dbg*/) {
-      int rc = pf_rename_volume(src.c_str(), target.c_str(), "/etc/pureflash/pf.conf");
+      int rc = pf_rename_aof(src.c_str(), target.c_str(), "/etc/pureflash/pf.conf");
       if (rc == 0)
         return IOStatus::OK();
       else

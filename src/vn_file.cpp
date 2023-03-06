@@ -127,7 +127,7 @@ int64_t vn_create_file(ViveFsContext* ctx, int64_t parent_inode_no, const char* 
 	}
 
 	_c.cancel_all();
-	S5LOG_INFO("Create file:%ld_%s, new ino:%ld, mode:00%o (octal)", parent_inode_no, file_name, ino, inode->i_mode);
+	//S5LOG_INFO("Create file:%ld_%s, new ino:%ld, mode:00%o (octal)", parent_inode_no, file_name, ino, inode->i_mode);
 	if (inode_out != NULL)
 		*inode_out = inode;
 	else
