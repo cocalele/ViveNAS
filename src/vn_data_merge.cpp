@@ -99,10 +99,10 @@ static bool _merge(const Slice& key,
 	const struct pfs_extent_head* right_ext_head = (const struct pfs_extent_head*)value.data();
 	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct pfs_extent_head);
 	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)key.data();
-	S5LOG_DEBUG("Merge extent:%s with left:%d + right:%d bytes", ext_key->to_string(),
-		existing_value->size() - sizeof(struct pfs_extent_head),
-		value.size() - sizeof(struct pfs_extent_head));
-
+	assert(left_ext_head->data_bmp != PFS_FULL_EXTENT_BMP && right_ext_head->data_bmp != PFS_FULL_EXTENT_BMP);
+	S5LOG_DEBUG("Merge extent:%s with left:(%hu,%ld) + right:(%hu,%ld) bytes", ext_key->to_string(),
+		left_ext_head->merge_off, existing_value->size() - sizeof(struct pfs_extent_head),
+		right_ext_head->merge_off, value.size() - sizeof(struct pfs_extent_head));
 
 	size_t ext_begin = min(left_ext_head->merge_off, right_ext_head->merge_off);
 	size_t ext_end = max(left_ext_head->merge_off + existing_value->size() - sizeof(struct pfs_extent_head),
@@ -114,6 +114,8 @@ static bool _merge(const Slice& key,
 	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, existing_value->size() - sizeof(struct pfs_extent_head));
 	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, value.size() - sizeof(struct pfs_extent_head));
 	new_ext_head->merge_off = (int16_t)ext_begin;
+	assert(new_ext_head->data_bmp != PFS_FULL_EXTENT_BMP);
+	S5LOG_DEBUG("Merge done, new off:%ld", new_ext_head->merge_off);
 	return true;
 }
 bool ViveDataMergeOperator::PartialMerge(const Slice& key,
@@ -167,7 +169,7 @@ bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
 		S5LOG_DEBUG("FullMergeV2 with existing_value size %ld", merge_in.existing_value->size());
 		const struct pfs_extent_head* existing_ext_head = (const struct pfs_extent_head*)merge_in.existing_value->data();
 		const char* existing_data_buf = merge_in.existing_value->data() + sizeof(struct pfs_extent_head);
-		assert(existing_ext_head->data_bmp == 0xffff);//suppose base data are full filled
+		//assert(existing_ext_head->data_bmp == PFS_FULL_EXTENT_BMP);//suppose base data are full filled
 		memcpy(new_data_buf, existing_data_buf, merge_in.existing_value->size() - sizeof(struct pfs_extent_head));
 
 	}

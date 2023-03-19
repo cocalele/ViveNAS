@@ -253,7 +253,7 @@ struct ViveFile* vn_open_file(ViveFsContext* ctx, int64_t parent_inode_no, const
 size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * in_buf, size_t len, off_t offset )
 {
 	int64_t start_ext = offset / file->inode->i_extent_size;
-	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
+	int64_t end_ext = (offset + len + file->inode->i_extent_size - 1) / file->inode->i_extent_size;
 	void* buf = malloc(file->inode->i_extent_size + PFS_EXTENT_HEAD_SIZE);
 	if (buf == NULL) {
 		S5LOG_ERROR("Failed alloc memory");
@@ -270,7 +270,7 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 
 	int64_t buf_offset = 0;
 
-	for (int64_t index = start_ext; index <= end_ext; index++) {
+	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		//string ext_key = format_string("%ld_%ld", file->i_no, index);
 		pfs_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
@@ -283,10 +283,10 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 		//TODO: implement a vector slice so we can combine extent_head and data together without memcpy
 		Slice segment_data((char*)buf, segment_len + PFS_EXTENT_HEAD_SIZE);
 		if(segment_len != file->inode->i_extent_size){
-			head->merge_off = (int16_t)start_off;
+			head->merge_off = (uint16_t)start_off;
 			s = tx->Merge(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		} else {
-			head->data_bmp = PFS_FULL_EXTENT_BMP;
+			head->data_bmp = (uint16_t)start_off; 
 			s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		if(!s.ok()){
@@ -315,6 +315,7 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 	_c.cancel_all();
 	return len;
 }
+
 size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec in_iov[], int iov_cnt, off_t offset)
 {
 	size_t len = 0;
@@ -322,7 +323,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		len += in_iov[i].iov_len;
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
-	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
+	int64_t end_ext = (offset + len + file->inode->i_extent_size - 1) / file->inode->i_extent_size;
 	//S5LOG_DEBUG("call vn_writev, iov_cnt:%ld off:%ld", iov_cnt, offset);
 	void* buf = malloc(file->inode->i_extent_size + PFS_EXTENT_HEAD_SIZE);
 	if (buf == NULL) {
@@ -341,7 +342,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 	int iov_idx = 0;
 	int64_t in_iov_off = 0;
 
-	for (int64_t index = start_ext; index <= end_ext; index++) {
+	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		//string ext_key = format_string("%ld_%ld", file->i_no, index);
 		pfs_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
@@ -371,13 +372,13 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		//TODO: implement a vector slice so we can combine extent_head and data together without memcpy
 		Slice segment_data((const char*)buf, segment_len + PFS_EXTENT_HEAD_SIZE);
 		if (segment_len != file->inode->i_extent_size) {
-			head->merge_off = (int16_t)start_off;
+			head->merge_off = (uint16_t)start_off;
 			//S5LOG_DEBUG("Merge data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Merge(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 			//s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
 		else {
-			head->data_bmp = PFS_FULL_EXTENT_BMP;
+			head->data_bmp = (uint16_t)start_off;;
 			//S5LOG_DEBUG("Put data on key:%s %ld bytes", ext_key.to_string(), segment_data.size());
 			s = tx->Put(ctx->data_cf, Slice((const char*)&ext_key, sizeof(ext_key)), segment_data);
 		}
@@ -410,14 +411,14 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, size_t len, off_t offset)
 {
 	int64_t start_ext = offset / file->inode->i_extent_size;
-	int64_t end_ext = (offset + len)/ file->inode->i_extent_size;
+	int64_t end_ext = (offset + len + file->inode->i_extent_size - 1)/ file->inode->i_extent_size;
 
 	if (offset + len > file->inode->i_size)
 		len = file->inode->i_size - offset;
 	int64_t buf_offset = 0;
 
 
-	for (int64_t index = start_ext; index <= end_ext; index++) {
+	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		pfs_extent_key ext_key = { {{extent_index : (__le64)index, inode_no : (__le64)file->i_no}} };
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent
@@ -450,7 +451,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 		len += out_iov[i].iov_len;
 	}
 	int64_t start_ext = offset / file->inode->i_extent_size;
-	int64_t end_ext = (offset + len) / file->inode->i_extent_size;
+	int64_t end_ext = (offset + len + file->inode->i_extent_size - 1) / file->inode->i_extent_size;
 	//S5LOG_DEBUG("call vn_readv, iov_cnt:%d, off:%d", iov_cnt, offset);
 	if (offset + len > file->inode->i_size)
 		len = file->inode->i_size - offset;
@@ -459,7 +460,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	int iov_idx = 0;
 	int64_t in_iov_off = 0;
 
-	for (int64_t index = start_ext; index <= end_ext; index++) {
+	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		pfs_extent_key ext_key = { { {extent_index: (__le64)index, inode_no : (__le64)file->i_no} } };
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent

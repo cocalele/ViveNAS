@@ -86,8 +86,8 @@ struct pfs_extent_head {
 	int8_t flags;
 	int8_t pad0;
 	union {
-		int16_t data_bmp; //extent当中有效的数据部分。bmp为0的部分在extent数据中并没有被存储
-		int16_t merge_off;  //一次写入操作在extent内部的offset
+		uint16_t data_bmp; //extent当中有效的数据部分。bmp为0的部分在extent数据中并没有被存储
+		uint16_t merge_off;  //一次写入操作在extent内部的offset
 	};
 	char pad1[12];
 }; //total 16 Byte
