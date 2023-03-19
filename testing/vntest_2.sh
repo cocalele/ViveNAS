@@ -11,6 +11,7 @@ FIFO_IN=/tmp/test_in
 AOF_SRC_DAT=/tmp/test_src.dat
 AOF_OUT_DAT=/tmp/test_out.dat
 
+#Vivenas should has been mounted here
 MNT_DIR=./mnt
 TEST_FILE=$MNT_DIR/test.txt
 
