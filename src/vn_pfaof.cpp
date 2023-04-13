@@ -9,8 +9,12 @@
 #include "pf_utils.h"
 #include "pf_client_api.h"
 #include "pf_client_priv.h"
+#include "pf_aof_cache.h"
+
+#define USE_READ_CACHE 1
 
 using namespace ROCKSDB_NAMESPACE;
+
 
 namespace ROCKSDB_NAMESPACE {
 static Logger* mylog = nullptr;
@@ -76,8 +80,9 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
     if (bytes_read < 0) {
       // An error: return a non-ok status
       s = IOStatus::IOError(format_string("Want %ld bytes at offset:%ld in file:%s", n, offset, file_name.c_str()) );
+    } else {
+      *result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
     }
-    *result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
     return s;
   }
 
@@ -99,11 +104,20 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
   off_t offset;
   PfAof* aof;
   std::string file_name;
+#ifdef USE_READ_CACHE
+  mutable AofWindowCache read_cache;
+#else
   mutable std::mutex read_mutex;
+#endif
  public:
   PfAofRandomFile(PfAof* _f, const std::string& fname)
       : offset(0), aof(_f), file_name(fname)
-  {}
+  {
+      int rc = read_cache.init(_f);
+      if(rc){
+        throw std::runtime_error(format_string("Failed to init read_cache, rc:%d", rc));
+      }
+  }
   ~PfAofRandomFile() {
     aof->reader_cnt--;
     aof->dec_ref(); 
@@ -128,13 +142,18 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
     IOStatus s;
     (void)options;
     (void)dbg;
-    ROCKS_LOG_DEBUG(mylog, "PfAofSeqFile preading %s\n", file_name.c_str());
+    //ROCKS_LOG_DEBUG(mylog, "PfAofSeqFile preading %s\n", file_name.c_str());
+#ifdef USE_READ_CACHE
+    ssize_t bytes_read = read_cache.pread(static_cast<void*>(scratch), n, offset_p);
+#else
     std::lock_guard<std::mutex> guard(read_mutex);
     ssize_t bytes_read = aof->read(static_cast<void*>(scratch), n, offset_p);
-    *result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
+#endif
     if (bytes_read < 0) {
       // An error: return a non-ok status
       s = IOStatus::IOError();
+    } else {
+		*result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
     }
     return s;
   }
