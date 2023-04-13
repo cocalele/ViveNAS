@@ -52,11 +52,21 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
   std::string file_name;
  public:
   PfAofSeqFile(PfAof* _f, const std::string &fname) : offset(0), aof(_f), file_name(fname)
-  {}
+  {
+	  int rc = read_cache.init(_f, true);
+	  if (rc) {
+		  throw std::runtime_error(format_string("Failed to init read_cache, rc:%d", rc));
+	  }
+  }
   ~PfAofSeqFile() {
     aof->reader_cnt--;
     aof->dec_ref();
   }
+
+#ifdef USE_READ_CACHE
+  mutable AofWindowCache read_cache;
+#endif
+
   // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
   // written by this routine.  Sets "*result" to the data that was
   // read (including if fewer than "n" bytes were successfully read).
