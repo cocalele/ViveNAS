@@ -50,22 +50,25 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
   off_t offset;
   PfAof* aof;
   std::string file_name;
+#ifdef USE_READ_CACHE
+  mutable AofWindowCache read_cache;
+#endif
+
  public:
   PfAofSeqFile(PfAof* _f, const std::string &fname) : offset(0), aof(_f), file_name(fname)
   {
+#ifdef USE_READ_CACHE
 	  int rc = read_cache.init(_f, true);
 	  if (rc) {
 		  throw std::runtime_error(format_string("Failed to init read_cache, rc:%d", rc));
 	  }
+#endif
   }
   ~PfAofSeqFile() {
     aof->reader_cnt--;
     aof->dec_ref();
   }
 
-#ifdef USE_READ_CACHE
-  mutable AofWindowCache read_cache;
-#endif
 
   // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
   // written by this routine.  Sets "*result" to the data that was
@@ -84,8 +87,13 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
     IOStatus s;
     (void)options;
     (void)dbg;
-    ROCKS_LOG_DEBUG(mylog, "PfAofSeqFile preading %s\n", file_name.c_str());
-    ssize_t bytes_read = aof->read(static_cast<void*>(scratch), n, offset);
+    //ROCKS_LOG_DEBUG(mylog, "PfAofSeqFile preading %s\n", file_name.c_str());
+#ifdef USE_READ_CACHE
+	ssize_t bytes_read = read_cache.pread(static_cast<void*>(scratch), n, offset);
+#else
+	ssize_t bytes_read = aof->read(static_cast<void*>(scratch), n, offset);
+#endif
+
     offset += bytes_read;
     if (bytes_read < 0) {
       // An error: return a non-ok status
@@ -95,6 +103,35 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
     }
     return s;
   }
+
+
+  // Positioned Read for direct I/O
+  // If Direct I/O enabled, offset, n, and scratch should be properly aligned
+  virtual IOStatus PositionedRead(uint64_t pos_offset, size_t n,
+	  const IOOptions& options,
+	  Slice* result, char* scratch,
+	  IODebugContext* dbg) {
+	  IOStatus s;
+	  (void)options;
+	  (void)dbg;
+	  //ROCKS_LOG_DEBUG(mylog, "PfAofSeqFile preading %s\n", file_name.c_str());
+#ifdef USE_READ_CACHE
+	  ssize_t bytes_read = read_cache.pread(static_cast<void*>(scratch), n, pos_offset);
+#else
+	  ssize_t bytes_read = aof->read(static_cast<void*>(scratch), n, pos_offset);
+#endif
+
+	  
+	  if (bytes_read < 0) {
+		  // An error: return a non-ok status
+		  s = IOStatus::IOError(format_string("Want %ld bytes at offset:%ld in file:%s", n, pos_offset, file_name.c_str()));
+	  }
+	  else {
+		  *result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
+	  }
+	  return s;
+  }
+
 
   // Skip "n" bytes from the file. This is guaranteed to be no
   // slower that reading the same data, but may be faster.
@@ -107,7 +144,13 @@ class PfAofSeqFile : public rocksdb::FSSequentialFile {
     offset += n;
     return IOStatus::OK();
   }
-  //virtual bool use_direct_io() const { return true; }
+  virtual bool use_direct_io() const { 
+#ifdef USE_READ_CACHE
+    return false;
+#else
+  return true; 
+#endif  
+  }
 };
 
 class PfAofRandomFile : virtual public FSRandomAccessFile {
@@ -123,10 +166,13 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
   PfAofRandomFile(PfAof* _f, const std::string& fname)
       : offset(0), aof(_f), file_name(fname)
   {
+#ifdef USE_READ_CACHE
+
       int rc = read_cache.init(_f);
       if(rc){
         throw std::runtime_error(format_string("Failed to init read_cache, rc:%d", rc));
       }
+#endif
   }
   ~PfAofRandomFile() {
     aof->reader_cnt--;
@@ -167,7 +213,13 @@ class PfAofRandomFile : virtual public FSRandomAccessFile {
     }
     return s;
   }
-  //virtual bool use_direct_io() const { return true; }
+  virtual bool use_direct_io() const {
+#ifdef USE_READ_CACHE
+	  return false;
+#else
+	  return true;
+#endif  
+  }
 };
 
 class PfAofWriteableFile :  public FSWritableFile {

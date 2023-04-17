@@ -510,7 +510,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 	
 		buf_offset += segment_len;
 	}
-	S5LOG_DEBUG("onread noatime:%d", file->noatime);
+	//S5LOG_DEBUG("onread noatime:%d", file->noatime);
 
 	if (!file->noatime) {
 		file->inode->i_atime = time(NULL);
