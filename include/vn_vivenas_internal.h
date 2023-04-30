@@ -75,7 +75,7 @@ struct ViveFsContext {
 	int relatime;  //1 if 'relatime' is specified on mount
 	int64_t generate_inode_no();
 };
-struct pfs_extent_key {
+struct vn_extent_key {
 	union {
 		struct {
 			__le64 extent_index;
@@ -87,7 +87,7 @@ struct pfs_extent_key {
 };
 
 #define PFS_FULL_EXTENT_BMP  (uint16_t)0xffff
-struct pfs_extent_head {
+struct vn_extent_head {
 	int8_t flags;
 	int8_t pad0;
 	union {
@@ -96,8 +96,8 @@ struct pfs_extent_head {
 	};
 	char pad1[12];
 }; //total 16 Byte
-static_assert(sizeof(struct pfs_extent_head)==16, "sizeof struct pfs_extent_head not expected 16");
-#define PFS_EXTENT_HEAD_SIZE sizeof(struct pfs_extent_head)
+static_assert(sizeof(struct vn_extent_head)==16, "sizeof struct vn_extent_head not expected 16");
+#define PFS_EXTENT_HEAD_SIZE sizeof(struct vn_extent_head)
 
 /**
  * special inode no, as defined in ext:
