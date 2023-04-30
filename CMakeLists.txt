@@ -88,14 +88,14 @@ set (VIVE_SRC
  #   src/fsal/vn_handle.cpp
  #   src/fsal/vn_export.cpp
  #   src/fsal/vn_up.cpp
- )
+  "src/vn_env.cpp")
  set (MKFS_SRC 
 	src/vn_pfaof.cpp
     src/vn_mkfs.cpp
     src/vn_main.cpp
     src/vn_file.cpp
     src/vn_data_merge.cpp
-)
+ "src/vn_env.cpp")
 set(ZOOKEEPER_SOURCE PureFlash/thirdParty/zookeeper/zookeeper-client/zookeeper-client-c)
 
 #link_directories(./PureFlash/build/bin ./rocksdb ${ZOOKEEPER_SOURCE}/.libs)
