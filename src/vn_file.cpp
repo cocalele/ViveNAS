@@ -185,7 +185,7 @@ struct ViveFile* vn_open_file_by_inode(ViveFsContext* ctx, struct ViveInode* ino
 		int64_t ext_cnt = (inode->i_size + inode->i_extent_size - 1) / inode->i_extent_size;
 
 		for (int64_t i = 0; i < ext_cnt; i++) {
-			pfs_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
+			vn_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
 
 			tx->Delete(ctx->data_cf, Slice((const char*)&ext_k, sizeof(ext_k)));
 		}
@@ -261,7 +261,7 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 	}
 	S5LOG_DEBUG("call vn_write, len:%ld off:%ld", len, offset);
 	DeferCall _1([buf]() {free(buf); });
-	struct pfs_extent_head* head = (struct pfs_extent_head*)buf;
+	struct vn_extent_head* head = (struct vn_extent_head*)buf;
 	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
 	DeferCall _2([tx]() {delete tx; });
 	Cleaner _c;
@@ -273,7 +273,7 @@ size_t vn_write(struct ViveFsContext* ctx, struct ViveFile* file, const char * i
 	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		//string ext_key = format_string("%ld_%ld", file->i_no, index);
-		pfs_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
+		vn_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
 
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent
 		size_t segment_len = std::min(len - buf_offset, (size_t)file->inode->i_extent_size - start_off);
@@ -331,7 +331,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 		return -1;
 	}
 	DeferCall _1([buf]() {free(buf); });
-	struct pfs_extent_head* head = (struct pfs_extent_head*)buf;
+	struct vn_extent_head* head = (struct vn_extent_head*)buf;
 	Transaction* tx = ctx->db->BeginTransaction(ctx->data_opt);
 	DeferCall _2([tx]() {delete tx; });
 	Cleaner _c;
@@ -345,7 +345,7 @@ size_t vn_writev(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec 
 	for (int64_t index = start_ext; index < end_ext; index++) {
 
 		//string ext_key = format_string("%ld_%ld", file->i_no, index);
-		pfs_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
+		vn_extent_key ext_key = { {{extent_index: (__le64)index, inode_no : (__le64)file->i_no}} };
 
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent
 		size_t segment_len = min(len - buf_offset, (size_t)file->inode->i_extent_size - start_off);
@@ -420,7 +420,7 @@ size_t vn_read(struct ViveFsContext* ctx, struct ViveFile* file, char* out_buf, 
 
 	for (int64_t index = start_ext; index < end_ext; index++) {
 
-		pfs_extent_key ext_key = { {{extent_index : (__le64)index, inode_no : (__le64)file->i_no}} };
+		vn_extent_key ext_key = { {{extent_index : (__le64)index, inode_no : (__le64)file->i_no}} };
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent
 		size_t segment_len = min(len - buf_offset, (size_t)file->inode->i_extent_size - start_off);
 		Status s;
@@ -462,7 +462,7 @@ size_t vn_readv(struct ViveFsContext* ctx, struct ViveFile* file, struct iovec o
 
 	for (int64_t index = start_ext; index < end_ext; index++) {
 
-		pfs_extent_key ext_key = { { {extent_index: (__le64)index, inode_no : (__le64)file->i_no} } };
+		vn_extent_key ext_key = { { {extent_index: (__le64)index, inode_no : (__le64)file->i_no} } };
 		int64_t start_off = (offset + buf_offset) % file->inode->i_extent_size; //offset in extent
 		size_t segment_len = min(len - buf_offset, (size_t)file->inode->i_extent_size - start_off);
 		Status s;
@@ -540,7 +540,7 @@ int vn_unlink(ViveFsContext* ctx, int64_t parent_ino, const char* fname)
 
 		int64_t ext_cnt = (inode->i_size + inode->i_extent_size - 1) / inode->i_extent_size;
 		for (int64_t i = 0; i < ext_cnt; i++) {
-			pfs_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
+			vn_extent_key ext_k = { {{extent_index: (__le64)i, inode_no : (__le64)inode->i_no}} };
 			tx->Delete(ctx->default_cf, Slice((const char*)&ext_k, sizeof(ext_k)));
 		}
 		tx->Delete(ctx->meta_cf, file_key);
@@ -729,7 +729,7 @@ inode_no_t vn_ino_of_file(struct ViveFile* f)
 	return f->i_no;
 }
 
-const char* pfs_extent_key::to_string() const
+const char* vn_extent_key::to_string() const
 {
 	static __thread char str[64];
 	snprintf(str, sizeof(str), "[ino:%lld, index:%lld]",  inode_no, extent_index);

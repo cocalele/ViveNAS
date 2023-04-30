@@ -93,26 +93,26 @@ static bool _merge(const Slice& key,
 		memcpy(new_value->data(), value.data(), value.size());
 		return true;
 	}
-	const struct pfs_extent_head* left_ext_head = (const struct pfs_extent_head*)existing_value->data();
-	const char* left_data_buf = ((const char*)left_ext_head) + sizeof(struct pfs_extent_head);
+	const struct vn_extent_head* left_ext_head = (const struct vn_extent_head*)existing_value->data();
+	const char* left_data_buf = ((const char*)left_ext_head) + sizeof(struct vn_extent_head);
 
-	const struct pfs_extent_head* right_ext_head = (const struct pfs_extent_head*)value.data();
-	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct pfs_extent_head);
-	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)key.data();
+	const struct vn_extent_head* right_ext_head = (const struct vn_extent_head*)value.data();
+	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct vn_extent_head);
+	const struct vn_extent_key* ext_key = (const struct vn_extent_key*)key.data();
 	assert(left_ext_head->data_bmp != PFS_FULL_EXTENT_BMP && right_ext_head->data_bmp != PFS_FULL_EXTENT_BMP);
 	//S5LOG_DEBUG("Merge extent:%s with left:(%hu,%ld) + right:(%hu,%ld) bytes", ext_key->to_string(),
 	//	left_ext_head->merge_off, existing_value->size() - sizeof(struct pfs_extent_head),
 	//	right_ext_head->merge_off, value.size() - sizeof(struct pfs_extent_head));
 
 	size_t ext_begin = min(left_ext_head->merge_off, right_ext_head->merge_off);
-	size_t ext_end = max(left_ext_head->merge_off + existing_value->size() - sizeof(struct pfs_extent_head),
-		right_ext_head->merge_off + value.size() - sizeof(struct pfs_extent_head));
+	size_t ext_end = max(left_ext_head->merge_off + existing_value->size() - sizeof(struct vn_extent_head),
+		right_ext_head->merge_off + value.size() - sizeof(struct vn_extent_head));
 
-	new_value->resize(ext_end - ext_begin + sizeof(struct pfs_extent_head));
-	struct pfs_extent_head* new_ext_head = (struct pfs_extent_head*)new_value->data();
-	char* new_data_buf = ((char*)new_ext_head) + sizeof(struct pfs_extent_head);
-	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, existing_value->size() - sizeof(struct pfs_extent_head));
-	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, value.size() - sizeof(struct pfs_extent_head));
+	new_value->resize(ext_end - ext_begin + sizeof(struct vn_extent_head));
+	struct vn_extent_head* new_ext_head = (struct vn_extent_head*)new_value->data();
+	char* new_data_buf = ((char*)new_ext_head) + sizeof(struct vn_extent_head);
+	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, existing_value->size() - sizeof(struct vn_extent_head));
+	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, value.size() - sizeof(struct vn_extent_head));
 	new_ext_head->merge_off = (int16_t)ext_begin;
 	//assert(new_ext_head->data_bmp != PFS_FULL_EXTENT_BMP);
 	//S5LOG_DEBUG("Merge done, new off:%ld", new_ext_head->merge_off);
@@ -159,18 +159,18 @@ bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
   return true;
 #else
 
-	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)merge_in.key.data();
+	const struct vn_extent_key* ext_key = (const struct vn_extent_key*)merge_in.key.data();
 	//S5LOG_DEBUG("FullMergeV2 extent:%s with %d operand", ext_key->to_string(), merge_in.operand_list.size());
 
-	merge_out->new_value.resize(VIVEFS_EXTENT_SIZE + sizeof(struct pfs_extent_head));
+	merge_out->new_value.resize(VIVEFS_EXTENT_SIZE + sizeof(struct vn_extent_head));
 	char* new_buf = merge_out->new_value.data();
-	char* new_data_buf = new_buf + sizeof(struct pfs_extent_head);
+	char* new_data_buf = new_buf + sizeof(struct vn_extent_head);
 	if (merge_in.existing_value != NULL) {
 		//S5LOG_DEBUG("FullMergeV2 with existing_value size %ld", merge_in.existing_value->size());
-		const struct pfs_extent_head* existing_ext_head = (const struct pfs_extent_head*)merge_in.existing_value->data();
-		const char* existing_data_buf = merge_in.existing_value->data() + sizeof(struct pfs_extent_head);
+		const struct vn_extent_head* existing_ext_head = (const struct vn_extent_head*)merge_in.existing_value->data();
+		const char* existing_data_buf = merge_in.existing_value->data() + sizeof(struct vn_extent_head);
 		//assert(existing_ext_head->data_bmp == PFS_FULL_EXTENT_BMP);//suppose base data are full filled
-		memcpy(new_data_buf, existing_data_buf, merge_in.existing_value->size() - sizeof(struct pfs_extent_head));
+		memcpy(new_data_buf, existing_data_buf, merge_in.existing_value->size() - sizeof(struct vn_extent_head));
 
 	}
 
@@ -183,9 +183,9 @@ bool ViveDataMergeOperator::FullMergeV2(const MergeOperationInput& merge_in,
 		}else{
 			//S5LOG_DEBUG("Operand[%d] length is %d", i, value.size());
 			const char* buf = value.data();
-			const struct pfs_extent_head* ext_head = (const struct pfs_extent_head*)buf;
-			const char* data_buf = buf + sizeof(struct pfs_extent_head);
-			memcpy(new_data_buf + ext_head->merge_off, data_buf, value.size() - sizeof(struct pfs_extent_head));
+			const struct vn_extent_head* ext_head = (const struct vn_extent_head*)buf;
+			const char* data_buf = buf + sizeof(struct vn_extent_head);
+			memcpy(new_data_buf + ext_head->merge_off, data_buf, value.size() - sizeof(struct vn_extent_head));
 			i++;
 		}
 	}
@@ -205,26 +205,26 @@ bool ViveDataMergeOperator::Merge(const Slice& key,
 		memcpy(new_value->data(), value.data(), value.size());
 		return true;
 	}
-	const struct pfs_extent_head* left_ext_head = (const struct pfs_extent_head*)existing_value->data();
-	const char* left_data_buf = ((const char*)left_ext_head) + sizeof(struct pfs_extent_head);
+	const struct vn_extent_head* left_ext_head = (const struct vn_extent_head*)existing_value->data();
+	const char* left_data_buf = ((const char*)left_ext_head) + sizeof(struct vn_extent_head);
 
-	const struct pfs_extent_head* right_ext_head = (const struct pfs_extent_head*)value.data();
-	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct pfs_extent_head);
-	const struct pfs_extent_key* ext_key = (const struct pfs_extent_key*)key.data();
+	const struct vn_extent_head* right_ext_head = (const struct vn_extent_head*)value.data();
+	char* right_data_buf = ((char*)right_ext_head) + sizeof(struct vn_extent_head);
+	const struct vn_extent_key* ext_key = (const struct vn_extent_key*)key.data();
 	S5LOG_DEBUG("Merge extent:%s with left:%d + right:%d bytes", ext_key->to_string(),
-		existing_value->size() - sizeof(struct pfs_extent_head),
-		value.size() - sizeof(struct pfs_extent_head));
+		existing_value->size() - sizeof(struct vn_extent_head),
+		value.size() - sizeof(struct vn_extent_head));
 
 
 	size_t ext_begin = min(left_ext_head->merge_off, right_ext_head->merge_off);
-	size_t ext_end = max(left_ext_head->merge_off + existing_value->size() - sizeof(struct pfs_extent_head),
-		right_ext_head->merge_off + value.size() - sizeof(struct pfs_extent_head));
+	size_t ext_end = max(left_ext_head->merge_off + existing_value->size() - sizeof(struct vn_extent_head),
+		right_ext_head->merge_off + value.size() - sizeof(struct vn_extent_head));
 
-	new_value->resize(ext_end - ext_begin + sizeof(struct pfs_extent_head));
-	struct pfs_extent_head* new_ext_head = (struct pfs_extent_head*)new_value->data();
-	char* new_data_buf = ((char*)new_ext_head) + sizeof(struct pfs_extent_head);
-	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, existing_value->size() - sizeof(struct pfs_extent_head));
-	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, value.size() - sizeof(struct pfs_extent_head));
+	new_value->resize(ext_end - ext_begin + sizeof(struct vn_extent_head));
+	struct vn_extent_head* new_ext_head = (struct vn_extent_head*)new_value->data();
+	char* new_data_buf = ((char*)new_ext_head) + sizeof(struct vn_extent_head);
+	memcpy(new_data_buf + (left_ext_head->merge_off - ext_begin), left_data_buf, existing_value->size() - sizeof(struct vn_extent_head));
+	memcpy(new_data_buf + (right_ext_head->merge_off - ext_begin), right_data_buf, value.size() - sizeof(struct vn_extent_head));
 	new_ext_head->merge_off = (int16_t)ext_begin;
 	return true;
 }
