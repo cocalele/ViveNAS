@@ -41,12 +41,7 @@ int vn_mkfs_vivefs(const char* db_path)
 		return -s.code();
 	}
 
-
-	// Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-	options.IncreaseParallelism();
-	options.OptimizeLevelStyleCompaction();
-	// create the DB if it's not already present
-	options.create_if_missing = true;
+	setup_db_options(options);
 	options.env = FLAGS_env;
 
 
@@ -60,13 +55,17 @@ int vn_mkfs_vivefs(const char* db_path)
 		return -s.code();
 	}
 	
-	s = ctx.db->CreateColumnFamily(ColumnFamilyOptions(), "meta_cf", &ctx.meta_cf);
+	ColumnFamilyOptions meta_opts, data_opts;
+	setup_meta_cf_options(meta_opts);
+	setup_data_cf_options(data_opts);
+
+	s = ctx.db->CreateColumnFamily(meta_opts, "meta_cf", &ctx.meta_cf);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF meta_cf, %s", s.ToString().c_str());
 		return -s.code();
 	}
 	
-	s = ctx.db->CreateColumnFamily(ColumnFamilyOptions(), "data_cf", &ctx.data_cf);
+	s = ctx.db->CreateColumnFamily(data_opts, "data_cf", &ctx.data_cf);
 	if (!s.ok()) {
 		fprintf(stderr, "Failed to create CF data_cf, %s", s.ToString().c_str());
 		return -s.code();

@@ -2,9 +2,13 @@
 #define vivenas_internal_h__
 #include "rocksdb/db.h"
 #include <rocksdb/utilities/transaction_db.h>
+#include "rocksdb/options.h"
+
 #include <memory>
 #include <string>
 #include <stdint.h>
+#include <linux/types.h>
+#include "vn_vivenas.h"
 
 struct ViveSuperBlock;
 
@@ -35,6 +39,7 @@ struct vn_inode_no_t {
 	}
 };
 
+struct ViveInode;
 struct ViveFile {
 	ViveInode* inode;
 	__le64  i_no;
@@ -122,6 +127,8 @@ static __always_inline int64_t deserialize_int64(const char* s) {
 }
 void deserialize_superblock(const char* buf, ViveSuperBlock& sb);
 std::string serialize_superblock(const ViveSuperBlock& sb);
-
+void setup_db_options(rocksdb::Options& options);
+void setup_data_cf_options(rocksdb::ColumnFamilyOptions& options);
+void setup_meta_cf_options(rocksdb::ColumnFamilyOptions& options);
 
 #endif // vivenas_internal_h__

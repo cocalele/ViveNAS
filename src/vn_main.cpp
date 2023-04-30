@@ -79,13 +79,8 @@ ViveFsContext* vn_mount(const char* db_path) {
 		S5LOG_ERROR("Failed creating env: %s\n", s.ToString().c_str());
 		return NULL;
 	}
+	setup_db_options(options);
 
-
-	// Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-	options.IncreaseParallelism();
-	options.OptimizeLevelStyleCompaction();
-	// create the DB if it's not already present
-	options.create_if_missing = true;
 	options.env = FLAGS_env;
 	TransactionDBOptions tx_opt;
 
@@ -95,10 +90,13 @@ ViveFsContext* vn_mount(const char* db_path) {
 	// have to open default column family
 	column_families.push_back(ColumnFamilyDescriptor(
 		ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
+	ColumnFamilyOptions meta_cf_opt;  
+	setup_meta_cf_options(meta_cf_opt);
 	// open the new one, too
 	column_families.push_back(ColumnFamilyDescriptor(
-		"meta_cf", ColumnFamilyOptions()));
+		"meta_cf", meta_cf_opt));
 	ColumnFamilyOptions data_cf_opt;
+	setup_data_cf_options(data_cf_opt);
 	data_cf_opt.merge_operator.reset(new ViveDataMergeOperator());
 	column_families.push_back(ColumnFamilyDescriptor(
 		"data_cf", data_cf_opt));
