@@ -585,11 +585,13 @@ public:
 };
 
 
-
+//As declared in https://gitee.com/cocalele/rocksdb/blob/v6.29.3/include/rocksdb/utilities/object_registry.h
+//`Register ` has been deprecated and should replace with AddFactory like in fs_posix.c
 extern "C" FactoryFunc<FileSystem> pfaof_reg;
 FactoryFunc<FileSystem> pfaof_reg =
-    ObjectLibrary::Default()->Register<FileSystem>(
-        "pfaof", [](const std::string& /* uri */,
+    ObjectLibrary::Default()->AddFactory<FileSystem>(
+        ObjectLibrary::PatternEntry("pfaof").AddSeparator("://", false), 
+        [](const std::string& /* uri */,
                     std::unique_ptr<FileSystem>* f, std::string* /* errmsg */) {
           *f = std::unique_ptr<FileSystem> (new PfAofFileSystem());
           return f->get();
