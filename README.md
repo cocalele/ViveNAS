@@ -86,8 +86,26 @@ __Core tech 2__，SLM tree based VIVEFS
 ```
   3) build
 ```
+  # cd rocksdb
+  # mkdir build; cd build
+  # cmake -S .. -GNinja -DCMAKE_BUILD_TYPE=Debug -DUSE_RTTI=1 -B .
+  # ninja
+  
+  # cd ../.. #i.e. ViveNAS source dir
   # mkdir build; cd build
   # cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
+  # ninja
+```
+  4) Run
+  run ganesha:
+```
+#  mkdir -p /var/lib/nfs/ganesha  /var/run/ganesha /usr/lib/ganesha
+# apt install liburcu6
+# apt-get install libgflags-dev 
+# ln -s /root/v2/ViveNAS/out/build/Linux-GCC-Debug/bin/libfsalvivenas.so/usr/lib/ganesha/libfsalvivenas.so
+# export LD_LIBRARY_PATH=/root/v2/nfs-ganesha/src/libntirpc/src:$LD_LIBRARY_PATH
+# mkfs.vn /vivenas_MP_a
+# LD_PRELOAD=/usr/lib/x86_64-linux-gnu/librdmacm.so.1.2.28.0 ../nfs-ganesha/build/ganesha.nfsd -F  -f ./ganesha-vivenas.conf -L /dev/stderr
 ```
 
 ## Performance estimation 

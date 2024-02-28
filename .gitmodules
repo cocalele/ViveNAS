@@ -1,10 +1,11 @@
 [submodule "rocksdb"]
 	path = rocksdb
 	url = https://gitee.com/cocalele/rocksdb.git
+	branch = pureflash-aof-v8.10
 [submodule "PureFlash"]
 	path = PureFlash
 	url = https://gitee.com/cocalele/PureFlash.git
 [submodule "nfs-ganesha"]
 	path = nfs-ganesha
 	url = https://gitee.com/cocalele/nfs-ganesha.git
-	branch = vivenas-v4
+	branch = vivenas
