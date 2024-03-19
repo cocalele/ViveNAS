@@ -1,0 +1,9 @@
+FROM docker.io/pureflash/pureflash-dev:1.9.1-x64
+LABEL version="1.9.1"
+apt install -y libgflags-dev liburcu-dev  bison flex nfs-common libzstd-dev
+
+#ARG BUILD_BIN
+
+#ENTRYPOINT 
+CMD [ "bash" ]
+

@@ -2,6 +2,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/slice_transform.h"
 #include "vn_vivenas_internal.h"
+#include "pf_utils.h"
 
 using namespace ROCKSDB_NAMESPACE;
 
@@ -22,9 +23,18 @@ static void setup_data_cf_options0(ColumnFamilyOptions& options)
 static void setup_meta_cf_options0(ColumnFamilyOptions& options)
 {
 }
-
+#define CONF_GET_VAL(fp, s, k, v) (fp ? conf_get_int(fp, s, k, v, false):v)
 void setup_db_options1(Options &options)
 {	
+	conf_file_t fp = NULL;
+	const char* conf = "/etc/pureflash/vivenas.conf";
+	fp = conf_open(conf);
+	if (!fp)
+	{
+		S5LOG_WARN("Failed to find vivenas conf(%s)", conf);
+	}
+	DeferCall _r([fp](){conf_close(fp);});
+
 	options.env->SetBackgroundThreads(4);
 	options.compaction_style = kCompactionStyleLevel;
 	options.write_buffer_size = 67108864; // 64MB, size of a single memtable. Once memtable exceeds this size, it is marked immutable and a new one is created.
@@ -34,7 +44,8 @@ void setup_db_options1(Options &options)
 	options.level0_file_num_compaction_trigger = 8;
 	options.level0_slowdown_writes_trigger = 17;
 	options.level0_stop_writes_trigger = 24;
-	options.num_levels = 4;
+	options.num_levels = CONF_GET_VAL(fp, "rocksdb", "num_levels", 4);
+	S5LOG_DEBUG("Use rocksdb num_levels:%d", options.num_levels);
 	options.max_bytes_for_level_base = 536870912; // 512MB
 	options.max_bytes_for_level_multiplier = 10;
 	options.target_file_size_multiplier = 2;
@@ -72,6 +83,15 @@ public:
 //some options are per column family, set it to cf
 void setup_data_cf_options1(ColumnFamilyOptions& options)
 {
+	conf_file_t fp = NULL;
+	const char* conf = "/etc/pureflash/vivenas.conf";
+	fp = conf_open(conf);
+	if (!fp)
+	{
+		S5LOG_WARN("Failed to find vivenas conf(%s)", conf);
+	}
+	DeferCall _r([fp]() {conf_close(fp); });
+
 	//setup_db_options(options.);
 	options.OptimizeLevelStyleCompaction();
 
@@ -80,6 +100,8 @@ void setup_data_cf_options1(ColumnFamilyOptions& options)
 	options.min_write_buffer_number_to_merge = 1;
 
 	options.target_file_size_base = 512<<20;
+	options.num_levels = CONF_GET_VAL(fp, "rocksdb", "num_levels", 4);
+	S5LOG_DEBUG("Use rocksdb num_levels(data_cf):%d", options.num_levels);
 
 	rocksdb::BlockBasedTableOptions table_options;
 
@@ -107,7 +129,6 @@ void setup_meta_cf_options1(ColumnFamilyOptions& options)
 	options.min_write_buffer_number_to_merge = 1;
 
 	options.target_file_size_base = 64 << 20;
-
 	rocksdb::BlockBasedTableOptions table_options;
 
 	table_options.block_size = 4 << 20;

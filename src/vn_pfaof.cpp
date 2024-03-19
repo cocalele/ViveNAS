@@ -8,7 +8,6 @@
 #include "pf_aof.h"
 #include "pf_utils.h"
 #include "pf_client_api.h"
-#include "pf_client_priv.h"
 #include "pf_aof_cache.h"
 
 #define USE_READ_CACHE 1
@@ -17,7 +16,7 @@ using namespace ROCKSDB_NAMESPACE;
 
 
 namespace ROCKSDB_NAMESPACE {
-static Logger* mylog = nullptr;
+//static Logger* mylog = nullptr;
 
 class PfDir : public FSDirectory {
  public:
@@ -296,6 +295,18 @@ class PfAofWriteableFile :  public FSWritableFile {
     }
 };
 
+class PfAofLogger : public Logger
+{
+public:
+    PfAofLogger(){}
+ virtual void Logv(const char* format, va_list args) override {
+    
+    vfprintf(stderr, format, args);
+  }
+ using Logger::Logv;
+};
+
+
 class PfAofFileSystem : public FileSystem {
 public:
     PfAofFileSystem()  {}
@@ -316,7 +327,7 @@ public:
                                 "/etc/pureflash/pf.conf", S5_LIB_VER);
         if (aof == NULL) return IOStatus::PathNotFound();
         aof->reader_cnt++;
-        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->path(), aof->reader_cnt, aof->writer_cnt);
         *result = std::unique_ptr<FSSequentialFile> (new PfAofSeqFile(aof, fname));
         return IOStatus::OK();
     }
@@ -339,7 +350,7 @@ public:
                                 "/etc/pureflash/pf.conf", S5_LIB_VER);
         if (aof == NULL) return IOStatus::PathNotFound();
         aof->reader_cnt++;
-        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->path(), aof->reader_cnt, aof->writer_cnt);
         *result = std::unique_ptr<FSRandomAccessFile> (new PfAofRandomFile(aof, fname));
         return IOStatus::OK();
     }
@@ -362,7 +373,7 @@ public:
                                 "/etc/pureflash/pf.conf", S5_LIB_VER);
         if (aof == NULL) return IOStatus::PathNotFound();
         aof->writer_cnt++;
-        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->volume->volume_name.c_str(), aof->reader_cnt, aof->writer_cnt);
+        S5LOG_DEBUG("Users of file %s reader:%d writer:%d", aof->path(), aof->reader_cnt, aof->writer_cnt);
         *result = std::unique_ptr<FSWritableFile> (new PfAofWriteableFile(aof, fname));
         return IOStatus::OK();
     }
@@ -560,19 +571,20 @@ public:
     // custom logger.
     virtual IOStatus NewLogger(const std::string& /*fname*/,
                                const IOOptions& /*io_opts*/,
-                               std::shared_ptr<Logger>* /*result*/,
+                               std::shared_ptr<Logger>* result,
                                IODebugContext* /*dbg*/) {
-      return IOStatus::NotSupported(
-          "NewLogger is not supported for this PfAofFileSystem");
+      *result = std::shared_ptr<Logger> (new PfAofLogger());
+      return IOStatus::OK();
     }
 
     // Get full directory name for this db.
-    virtual IOStatus GetAbsolutePath(const std::string& /*db_path*/,
+    virtual IOStatus GetAbsolutePath(const std::string& db_path,
                                      const IOOptions& /*options*/,
-                                     std::string* /*output_path*/,
+                                     std::string* output_path,
                                      IODebugContext* /*dbg*/) {
-      return IOStatus::NotSupported(
-          "GetAbsolutePath is not supported for this PfAofFileSystem");
+      S5LOG_DEBUG("GetAbsolutePath '%s' return itself", db_path.c_str());
+      *output_path = db_path;
+      return IOStatus::OK();
     }
 
     virtual IOStatus IsDirectory(const std::string& /*path*/,

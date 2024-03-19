@@ -48,7 +48,7 @@ set (CMAKE_CXX_STANDARD 17)
 #				)
 
 
-#execute_process(COMMAND cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug -DUSE_RTTI=1
+#execute_process(COMMAND cmake -S .. -GNinja -DCMAKE_BUILD_TYPE=Release -DUSE_RTTI=1 -DWITH_ZSTD=ON -B . -DROCKSDB_PLUGINS=pfaof -DPF_INC=${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/common/include/ -DPF_LIB=${CMAKE_CURRENT_SOURCE_DIR}/PureFlash/build/bin
 #				COMMAND ninja
 #                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/build
 #				)
@@ -109,7 +109,7 @@ add_executable(vn_test_helper  src/vn_test_helper.cpp PureFlash/common/src/pf_ut
 set(SPDKLIBS spdk_nvme spdk_env_dpdk spdk_util spdk_log spdk_sock spdk_trace spdk_json spdk_jsonrpc spdk_rpc)
 set(DPDKLIBS rte_eal rte_mempool rte_ring rte_telemetry rte_kvargs rte_pci rte_bus_pci rte_mempool_ring)
 
-TARGET_LINK_LIBRARIES(vivenas pthread  s5common uuid aio ${SPDKLIBS} ${DPDKLIBS} curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++)
+TARGET_LINK_LIBRARIES(vivenas pthread  s5common uuid aio ${SPDKLIBS} ${DPDKLIBS} curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++ m)
 TARGET_LINK_LIBRARIES(mkfs.vn pthread  s5common uuid aio ${SPDKLIBS} ${DPDKLIBS} curl  rocksdb zookeeper_mt rdmacm ibverbs )
 TARGET_LINK_LIBRARIES(vn_test_helper pthread  s5common uuid aio ${SPDKLIBS} ${DPDKLIBS} curl  rocksdb zookeeper_mt rdmacm ibverbs stdc++ )
 

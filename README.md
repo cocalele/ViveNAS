@@ -70,7 +70,9 @@ __Core tech 2__，SLM tree based VIVEFS
   0) follow the guides in PureFlash/build_and_run.txt to setup a compile environment for PureFlash
   1) For ubuntu, run following command to install additional dependency:
 ```
-  # apt install liburcu-dev  bison flex libgflags-dev  libblkid-dev
+  # apt install liburcu-dev  bison flex libgflags-dev  libblkid-dev libzstd-dev 
+  # to run rocksdb db_bench, also install:
+  # apt install time bc
 ```
   To simplify the compiling process, some thirdparty libraryies are prebuild into binary. For now only ubuntu20.04 is supported.
 
@@ -86,12 +88,20 @@ __Core tech 2__，SLM tree based VIVEFS
 ```
   3) build
 ```
+  # cd ViveNAS; VIVENAS_HOME=$(pwd)
+  # git submodule update --init --recursive
   # cd rocksdb
   # mkdir build; cd build
-  # cmake -S .. -GNinja -DCMAKE_BUILD_TYPE=Debug -DUSE_RTTI=1 -B .
+  # cmake -S .. -GNinja -DCMAKE_BUILD_TYPE=Release -DUSE_RTTI=1 -DWITH_ZSTD=ON -B . -DROCKSDB_PLUGINS=pfaof -DPF_INC=/root/ViveNAS/PureFlash/common/include/ -DPF_LIB=/root/ViveNAS/PureFlash/build/bin
   # ninja
   
-  # cd ../.. #i.e. ViveNAS source dir
+  # cd $VIVENAS_HOME/PureFlash/
+  # git submodule update --init --recursive
+  # mkdir build; cd build
+  # cmake -GNinja -DCMAKE_BUILD_TYPE=Debug ..
+  # ninja
+
+  # cd $VIVENAS_HOME
   # mkdir build; cd build
   # cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
   # ninja
@@ -102,10 +112,10 @@ __Core tech 2__，SLM tree based VIVEFS
 #  mkdir -p /var/lib/nfs/ganesha  /var/run/ganesha /usr/lib/ganesha
 # apt install liburcu6
 # apt-get install libgflags-dev 
-# ln -s /root/v2/ViveNAS/out/build/Linux-GCC-Debug/bin/libfsalvivenas.so/usr/lib/ganesha/libfsalvivenas.so
+# ln -s /root/v2/ViveNAS/out/build/Linux-GCC-Debug/bin/libfsalvivenas.so /usr/lib/ganesha/libfsalvivenas.so
 # export LD_LIBRARY_PATH=/root/v2/nfs-ganesha/src/libntirpc/src:$LD_LIBRARY_PATH
-# mkfs.vn /vivenas_MP_a
-# LD_PRELOAD=/usr/lib/x86_64-linux-gnu/librdmacm.so.1.2.28.0 ../nfs-ganesha/build/ganesha.nfsd -F  -f ./ganesha-vivenas.conf -L /dev/stderr
+# mkfs.vn /vivenas_a
+# LD_PRELOAD=/usr/lib/x86_64-linux-gnu/librdmacm.so.1.2.28.0 ../nfs-ganesha/build/ganesha.nfsd -F  -f ./ganesha-vivenas.conf -L /dev/stderr -p /var/run/ganesha.pid
 ```
 
 ## Performance estimation 
